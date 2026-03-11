@@ -5,19 +5,22 @@
  ******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include "tss2_mu.h"
-#include "tss2_sys.h"
-#include "tss2_esys.h"
+#include <inttypes.h> // for PRIx32, PRIi32, int32_t
+#include <stdlib.h>   // for NULL, calloc
 
-#include "esys_types.h"
-#include "esys_iutil.h"
-#include "esys_mu.h"
+#include "esys_int.h"        // for ESYS_CONTEXT, RSRC_NODE_T, _ESYS_STATE_...
+#include "esys_iutil.h"      // for iesys_compute_session_value, esys_GetRe...
+#include "esys_types.h"      // for IESYS_RESOURCE
+#include "tss2_common.h"     // for TSS2_RC, TSS2_RC_SUCCESS, TSS2_BASE_RC_...
+#include "tss2_esys.h"       // for ESYS_CONTEXT, ESYS_TR, Esys_PolicySecret
+#include "tss2_sys.h"        // for Tss2_Sys_ExecuteAsync, TSS2L_SYS_AUTH_C...
+#include "tss2_tpm2_types.h" // for TPM2B_NONCE, TPM2B_TIMEOUT, TPMT_TK_AUTH
+
 #define LOGMODULE esys
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for return_state_if_error, LOG_DEBUG, LOG_E...
 
 /** One-Call function for TPM2_PolicySecret
  *
@@ -70,25 +73,22 @@
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_PolicySecret(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR authHandle,
-    ESYS_TR policySession,
-    ESYS_TR shandle1,
-    ESYS_TR shandle2,
-    ESYS_TR shandle3,
-    const TPM2B_NONCE *nonceTPM,
-    const TPM2B_DIGEST *cpHashA,
-    const TPM2B_NONCE *policyRef,
-    INT32 expiration,
-    TPM2B_TIMEOUT **timeout,
-    TPMT_TK_AUTH **policyTicket)
-{
+Esys_PolicySecret(ESYS_CONTEXT       *esysContext,
+                  ESYS_TR             authHandle,
+                  ESYS_TR             policySession,
+                  ESYS_TR             shandle1,
+                  ESYS_TR             shandle2,
+                  ESYS_TR             shandle3,
+                  const TPM2B_NONCE  *nonceTPM,
+                  const TPM2B_DIGEST *cpHashA,
+                  const TPM2B_NONCE  *policyRef,
+                  INT32               expiration,
+                  TPM2B_TIMEOUT     **timeout,
+                  TPMT_TK_AUTH      **policyTicket) {
     TSS2_RC r;
 
-    r = Esys_PolicySecret_Async(esysContext, authHandle, policySession, shandle1,
-                                shandle2, shandle3, nonceTPM, cpHashA, policyRef,
-                                expiration);
+    r = Esys_PolicySecret_Async(esysContext, authHandle, policySession, shandle1, shandle2,
+                                shandle3, nonceTPM, cpHashA, policyRef, expiration);
     return_if_error(r, "Error in async function");
 
     /* Set the timeout to indefinite for now, since we want _Finish to block */
@@ -105,10 +105,9 @@ Esys_PolicySecret(
         r = Esys_PolicySecret_Finish(esysContext, timeout, policyTicket);
         /* This is just debug information about the reattempt to finish the
            command */
-        if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN)
-            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32
-                      " => resubmitting command", r);
-    } while ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN);
+        if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN)
+            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32 " => resubmitting command", r);
+    } while (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN);
 
     /* Restore the timeout value to the original value */
     esysContext->timeout = timeouttmp;
@@ -154,27 +153,24 @@ Esys_PolicySecret(
  *         ESYS_TR objects are ESYS_TR_NONE.
  */
 TSS2_RC
-Esys_PolicySecret_Async(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR authHandle,
-    ESYS_TR policySession,
-    ESYS_TR shandle1,
-    ESYS_TR shandle2,
-    ESYS_TR shandle3,
-    const TPM2B_NONCE *nonceTPM,
-    const TPM2B_DIGEST *cpHashA,
-    const TPM2B_NONCE *policyRef,
-    INT32 expiration)
-{
+Esys_PolicySecret_Async(ESYS_CONTEXT       *esysContext,
+                        ESYS_TR             authHandle,
+                        ESYS_TR             policySession,
+                        ESYS_TR             shandle1,
+                        ESYS_TR             shandle2,
+                        ESYS_TR             shandle3,
+                        const TPM2B_NONCE  *nonceTPM,
+                        const TPM2B_DIGEST *cpHashA,
+                        const TPM2B_NONCE  *policyRef,
+                        INT32               expiration) {
     TSS2_RC r;
-    LOG_TRACE("context=%p, authHandle=%"PRIx32 ", policySession=%"PRIx32 ","
+    LOG_TRACE("context=%p, authHandle=%" PRIx32 ", policySession=%" PRIx32 ","
               "nonceTPM=%p, cpHashA=%p, policyRef=%p,"
-              "expiration=%"PRIi32 "",
-              esysContext, authHandle, policySession, nonceTPM, cpHashA,
-              policyRef, expiration);
+              "expiration=%" PRIi32 "",
+              esysContext, authHandle, policySession, nonceTPM, cpHashA, policyRef, expiration);
     TSS2L_SYS_AUTH_COMMAND auths;
-    RSRC_NODE_T *authHandleNode;
-    RSRC_NODE_T *policySessionNode;
+    RSRC_NODE_T           *authHandleNode;
+    RSRC_NODE_T           *policySessionNode;
 
     /* Check context, sequence correctness and set state to error for now */
     if (esysContext == NULL) {
@@ -184,52 +180,52 @@ Esys_PolicySecret_Async(
     r = iesys_check_sequence_async(esysContext);
     if (r != TSS2_RC_SUCCESS)
         return r;
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /* Check input parameters */
     r = check_session_feasibility(shandle1, shandle2, shandle3, 1);
-    return_state_if_error(r, _ESYS_STATE_INIT, "Check session usage");
+    return_state_if_error(r, ESYS_STATE_INIT, "Check session usage");
 
     /* Retrieve the metadata objects for provided handles */
     r = esys_GetResourceObject(esysContext, authHandle, &authHandleNode);
-    return_state_if_error(r, _ESYS_STATE_INIT, "authHandle unknown.");
+    return_state_if_error(r, ESYS_STATE_INIT, "authHandle unknown.");
     r = esys_GetResourceObject(esysContext, policySession, &policySessionNode);
-    return_state_if_error(r, _ESYS_STATE_INIT, "policySession unknown.");
+    return_state_if_error(r, ESYS_STATE_INIT, "policySession unknown.");
 
     /* Initial invocation of SAPI to prepare the command buffer with parameters */
-    r = Tss2_Sys_PolicySecret_Prepare(esysContext->sys,
-                                      (authHandleNode == NULL) ? TPM2_RH_NULL
-                                       : authHandleNode->rsrc.handle,
-                                      (policySessionNode == NULL) ? TPM2_RH_NULL
-                                       : policySessionNode->rsrc.handle,
-                                      nonceTPM, cpHashA, policyRef, expiration);
-    return_state_if_error(r, _ESYS_STATE_INIT, "SAPI Prepare returned error.");
+    r = Tss2_Sys_PolicySecret_Prepare(
+        esysContext->sys, (authHandleNode == NULL) ? TPM2_RH_NULL : authHandleNode->rsrc.handle,
+        (policySessionNode == NULL) ? TPM2_RH_NULL : policySessionNode->rsrc.handle, nonceTPM,
+        cpHashA, policyRef, expiration);
+    return_state_if_error(r, ESYS_STATE_INIT, "SAPI Prepare returned error.");
 
     /* Calculate the cpHash Values */
     r = init_session_tab(esysContext, shandle1, shandle2, shandle3);
-    return_state_if_error(r, _ESYS_STATE_INIT, "Initialize session resources");
-    iesys_compute_session_value(esysContext->session_tab[0],
-                &authHandleNode->rsrc.name, &authHandleNode->auth);
+    return_state_if_error(r, ESYS_STATE_INIT, "Initialize session resources");
+    if (authHandleNode != NULL)
+        iesys_compute_session_value(esysContext->session_tab[0], &authHandleNode->rsrc.name,
+                                    &authHandleNode->auth);
+    else
+        iesys_compute_session_value(esysContext->session_tab[0], NULL, NULL);
+
     iesys_compute_session_value(esysContext->session_tab[1], NULL, NULL);
     iesys_compute_session_value(esysContext->session_tab[2], NULL, NULL);
 
     /* Generate the auth values and set them in the SAPI command buffer */
     r = iesys_gen_auths(esysContext, authHandleNode, policySessionNode, NULL, &auths);
-    return_state_if_error(r, _ESYS_STATE_INIT,
-                          "Error in computation of auth values");
+    return_state_if_error(r, ESYS_STATE_INIT, "Error in computation of auth values");
 
     esysContext->authsCount = auths.count;
     if (auths.count > 0) {
         r = Tss2_Sys_SetCmdAuths(esysContext->sys, &auths);
-        return_state_if_error(r, _ESYS_STATE_INIT, "SAPI error on SetCmdAuths");
+        return_state_if_error(r, ESYS_STATE_INIT, "SAPI error on SetCmdAuths");
     }
 
     /* Trigger execution and finish the async invocation */
     r = Tss2_Sys_ExecuteAsync(esysContext->sys);
-    return_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                          "Finish (Execute Async)");
+    return_state_if_error(r, ESYS_STATE_INTERNALERROR, "Finish (Execute Async)");
 
-    esysContext->state = _ESYS_STATE_SENT;
+    esysContext->state = ESYS_STATE_SENT;
 
     return r;
 }
@@ -269,14 +265,11 @@ Esys_PolicySecret_Async(
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_PolicySecret_Finish(
-    ESYS_CONTEXT *esysContext,
-    TPM2B_TIMEOUT **timeout,
-    TPMT_TK_AUTH **policyTicket)
-{
+Esys_PolicySecret_Finish(ESYS_CONTEXT   *esysContext,
+                         TPM2B_TIMEOUT **timeout,
+                         TPMT_TK_AUTH  **policyTicket) {
     TSS2_RC r;
-    LOG_TRACE("context=%p, timeout=%p, policyTicket=%p",
-              esysContext, timeout, policyTicket);
+    LOG_TRACE("context=%p, timeout=%p, policyTicket=%p", esysContext, timeout, policyTicket);
 
     if (esysContext == NULL) {
         LOG_ERROR("esyscontext is NULL.");
@@ -284,22 +277,21 @@ Esys_PolicySecret_Finish(
     }
 
     /* Check for correct sequence and set sequence to irregular for now */
-    if (esysContext->state != _ESYS_STATE_SENT &&
-        esysContext->state != _ESYS_STATE_RESUBMISSION) {
+    if (esysContext->state != ESYS_STATE_SENT && esysContext->state != ESYS_STATE_RESUBMISSION) {
         LOG_ERROR("Esys called in bad sequence.");
         return TSS2_ESYS_RC_BAD_SEQUENCE;
     }
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /* Allocate memory for response parameters */
     if (timeout != NULL) {
-        *timeout = calloc(sizeof(TPM2B_TIMEOUT), 1);
+        *timeout = calloc(1, sizeof(TPM2B_TIMEOUT));
         if (*timeout == NULL) {
             return_error(TSS2_ESYS_RC_MEMORY, "Out of memory");
         }
     }
     if (policyTicket != NULL) {
-        *policyTicket = calloc(sizeof(TPMT_TK_AUTH), 1);
+        *policyTicket = calloc(1, sizeof(TPMT_TK_AUTH));
         if (*policyTicket == NULL) {
             goto_error(r, TSS2_ESYS_RC_MEMORY, "Out of memory", error_cleanup);
         }
@@ -307,22 +299,23 @@ Esys_PolicySecret_Finish(
 
     /*Receive the TPM response and handle resubmissions if necessary. */
     r = Tss2_Sys_ExecuteFinish(esysContext->sys, esysContext->timeout);
-    if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN) {
+    if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN) {
         LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32, r);
-        esysContext->state = _ESYS_STATE_SENT;
+        esysContext->state = ESYS_STATE_SENT;
         goto error_cleanup;
     }
     /* This block handle the resubmission of TPM commands given a certain set of
      * TPM response codes. */
     if (r == TPM2_RC_RETRY || r == TPM2_RC_TESTING || r == TPM2_RC_YIELDED) {
         LOG_DEBUG("TPM returned RETRY, TESTING or YIELDED, which triggers a "
-            "resubmission: %" PRIx32, r);
-        if (esysContext->submissionCount++ >= _ESYS_MAX_SUBMISSIONS) {
+                  "resubmission: %" PRIx32,
+                  r);
+        if (esysContext->submissionCount++ >= ESYS_MAX_SUBMISSIONS) {
             LOG_WARNING("Maximum number of (re)submissions has been reached.");
-            esysContext->state = _ESYS_STATE_INIT;
+            esysContext->state = ESYS_STATE_INIT;
             goto error_cleanup;
         }
-        esysContext->state = _ESYS_STATE_RESUBMISSION;
+        esysContext->state = ESYS_STATE_RESUBMISSION;
         r = Tss2_Sys_ExecuteAsync(esysContext->sys);
         if (r != TSS2_RC_SUCCESS) {
             LOG_WARNING("Error attempting to resubmit");
@@ -337,11 +330,11 @@ Esys_PolicySecret_Finish(
     /* The following is the "regular error" handling. */
     if (iesys_tpm_error(r)) {
         LOG_WARNING("Received TPM Error");
-        esysContext->state = _ESYS_STATE_INIT;
+        esysContext->state = ESYS_STATE_INIT;
         goto error_cleanup;
     } else if (r != TSS2_RC_SUCCESS) {
         LOG_ERROR("Received a non-TPM Error");
-        esysContext->state = _ESYS_STATE_INTERNALERROR;
+        esysContext->state = ESYS_STATE_INTERNALERROR;
         goto error_cleanup;
     }
 
@@ -350,22 +343,18 @@ Esys_PolicySecret_Finish(
      * parameter decryption have to be done.
      */
     r = iesys_check_response(esysContext);
-    goto_state_if_error(r, _ESYS_STATE_INTERNALERROR, "Error: check response",
-                        error_cleanup);
+    goto_state_if_error(r, ESYS_STATE_INTERNALERROR, "Error: check response", error_cleanup);
 
     /*
      * After the verification of the response we call the complete function
      * to deliver the result.
      */
-    r = Tss2_Sys_PolicySecret_Complete(esysContext->sys,
-                                       (timeout != NULL) ? *timeout : NULL,
-                                       (policyTicket != NULL) ? *policyTicket
-                                        : NULL);
-    goto_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                        "Received error from SAPI unmarshaling" ,
+    r = Tss2_Sys_PolicySecret_Complete(esysContext->sys, (timeout != NULL) ? *timeout : NULL,
+                                       (policyTicket != NULL) ? *policyTicket : NULL);
+    goto_state_if_error(r, ESYS_STATE_INTERNALERROR, "Received error from SAPI unmarshaling",
                         error_cleanup);
 
-    esysContext->state = _ESYS_STATE_INIT;
+    esysContext->state = ESYS_STATE_INIT;
 
     return TSS2_RC_SUCCESS;
 

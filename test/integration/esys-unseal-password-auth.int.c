@@ -5,25 +5,24 @@
  *******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
+#include <stdio.h>     // for NULL
+#include <stdlib.h>    // for EXIT_FAILURE, EXIT_SUCCESS
+#include <string.h>    // for memcmp
+#include <tss2_esys.h> // for Esys_Free, ESYS_TR_NONE, Esys_FlushContext
 
-#include <tss2_esys.h>
-
-#include "test.h"
-#include "esys_types.h"
-#include "esys_iutil.h"
+#include "esys_int.h"        // for RSRC_NODE_T
+#include "esys_iutil.h"      // for esys_GetResourceObject
+#include "esys_types.h"      // for IESYS_RESOURCE
+#include "tss2_common.h"     // for TSS2_RC_SUCCESS, TSS2_RC
+#include "tss2_tpm2_types.h" // for TPM2B_SENSITIVE_CREATE, TPM2B_PUBLIC
 
 #define LOGMODULE test
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for goto_if_error, LOG_INFO, LOG_ERROR
 
-/** This test is intended to test the unseal operation for the ESAPI command
+/** This test is intended to test the unseal operation for the ESYS command
  *  Unseal.
  *
  * We start by creating a primary key (Esys_CreatePrimary).
@@ -32,7 +31,7 @@
  * This key will be loaded and the unseal command (Esys_Unseal) will be used
  * to retrieve the sealed data.
  *
- * Tested ESAPI commands:
+ * Tested ESYS commands:
  *  - Esys_Create() (M)
  *  - Esys_CreatePrimary() (M)
  *  - Esys_FlushContext() (M)
@@ -45,9 +44,7 @@
  */
 
 int
-test_esys_unseal_password_auth(ESYS_CONTEXT * esys_context)
-{
-
+test_esys_unseal_password_auth(ESYS_CONTEXT *esys_context) {
     /*
      * 1. Create Primary
      */
@@ -55,10 +52,18 @@ test_esys_unseal_password_auth(ESYS_CONTEXT * esys_context)
     ESYS_TR primaryHandle = ESYS_TR_NONE;
     ESYS_TR loadedKeyHandle = ESYS_TR_NONE;
 
-    TPM2B_AUTH authValuePrimary = {
-        .size = 5,
-        .buffer = {1, 2, 3, 4, 5}
-    };
+    TPM2B_PUBLIC         *outPublic = NULL;
+    TPM2B_CREATION_DATA  *creationData = NULL;
+    TPM2B_DIGEST         *creationHash = NULL;
+    TPMT_TK_CREATION     *creationTicket = NULL;
+    TPM2B_PUBLIC         *outPublic2 = NULL;
+    TPM2B_PRIVATE        *outPrivate2 = NULL;
+    TPM2B_CREATION_DATA  *creationData2 = NULL;
+    TPM2B_DIGEST         *creationHash2 = NULL;
+    TPMT_TK_CREATION     *creationTicket2 = NULL;
+    TPM2B_SENSITIVE_DATA *outData = NULL;
+
+    TPM2B_AUTH authValuePrimary = { .size = 5, .buffer = { 1, 2, 3, 4, 5 } };
 
     TPM2B_SENSITIVE_CREATE inSensitivePrimary = {
         .size = 0,
@@ -117,34 +122,23 @@ test_esys_unseal_password_auth(ESYS_CONTEXT * esys_context)
         .count = 0,
     };
 
-    TPM2B_AUTH authValue = {
-        .size = 0,
-        .buffer = {}
-    };
+    TPM2B_AUTH authValue = { .size = 0, .buffer = {} };
 
     r = Esys_TR_SetAuth(esys_context, ESYS_TR_RH_OWNER, &authValue);
     goto_if_error(r, "Error: TR_SetAuth", error);
 
     RSRC_NODE_T *primaryHandle_node;
-    TPM2B_PUBLIC *outPublic;
-    TPM2B_CREATION_DATA *creationData;
-    TPM2B_DIGEST *creationHash;
-    TPMT_TK_CREATION *creationTicket;
 
-    r = Esys_CreatePrimary(esys_context, ESYS_TR_RH_OWNER, ESYS_TR_PASSWORD,
-                           ESYS_TR_NONE, ESYS_TR_NONE,
-                           &inSensitivePrimary, &inPublic,
-                           &outsideInfo, &creationPCR, &primaryHandle,
-                           &outPublic, &creationData, &creationHash,
+    r = Esys_CreatePrimary(esys_context, ESYS_TR_RH_OWNER, ESYS_TR_PASSWORD, ESYS_TR_NONE,
+                           ESYS_TR_NONE, &inSensitivePrimary, &inPublic, &outsideInfo, &creationPCR,
+                           &primaryHandle, &outPublic, &creationData, &creationHash,
                            &creationTicket);
     goto_if_error(r, "Error esys create primary", error);
 
-    r = esys_GetResourceObject(esys_context, primaryHandle,
-                               &primaryHandle_node);
+    r = esys_GetResourceObject(esys_context, primaryHandle, &primaryHandle_node);
     goto_if_error(r, "Error Esys GetResourceObject", error);
 
-    LOG_INFO("Created Primary with handle 0x%08x...",
-             primaryHandle_node->rsrc.handle);
+    LOG_INFO("Created Primary with handle 0x%08x...", primaryHandle_node->rsrc.handle);
 
     r = Esys_TR_SetAuth(esys_context, primaryHandle, &authValuePrimary);
     goto_if_error(r, "Error: TR_SetAuth", error);
@@ -153,24 +147,12 @@ test_esys_unseal_password_auth(ESYS_CONTEXT * esys_context)
      * 2. Create second key with sealed data
      */
 
-    TPM2B_AUTH authKey2 = {
-        .size = 6,
-        .buffer = {6, 7, 8, 9, 10, 11}
-    };
+    TPM2B_AUTH authKey2 = { .size = 6, .buffer = { 6, 7, 8, 9, 10, 11 } };
 
-    TPM2B_SENSITIVE_CREATE inSensitive2 = {
-        .size = 0,
-        .sensitive = {
-            .userAuth = {
-                .size = 0,
-                .buffer = {0}
-            },
-            .data = {
-                .size = 8,
-                .buffer = {3,2,3,2,3,2,3,2}
-            }
-        }
-    };
+    TPM2B_SENSITIVE_CREATE inSensitive2
+        = { .size = 0,
+            .sensitive = { .userAuth = { .size = 0, .buffer = { 0 } },
+                           .data = { .size = 8, .buffer = { 3, 2, 3, 2, 3, 2, 3, 2 } } } };
 
     inSensitive2.sensitive.userAuth = authKey2;
 
@@ -230,30 +212,16 @@ test_esys_unseal_password_auth(ESYS_CONTEXT * esys_context)
 
     TPM2B_DATA outsideInfo2 = {
         .size = 0,
-        .buffer = {}
-        ,
+        .buffer = {},
     };
 
     TPML_PCR_SELECTION creationPCR2 = {
         .count = 0,
     };
 
-    TPM2B_PUBLIC *outPublic2;
-    TPM2B_PRIVATE *outPrivate2;
-    TPM2B_CREATION_DATA *creationData2;
-    TPM2B_DIGEST *creationHash2;
-    TPMT_TK_CREATION *creationTicket2;
-
-    r = Esys_Create(esys_context,
-                    primaryHandle,
-                    ESYS_TR_PASSWORD, ESYS_TR_NONE, ESYS_TR_NONE,
-                    &inSensitive2,
-                    &inPublic2,
-                    &outsideInfo2,
-                    &creationPCR2,
-                    &outPrivate2,
-                    &outPublic2,
-                    &creationData2, &creationHash2, &creationTicket2);
+    r = Esys_Create(esys_context, primaryHandle, ESYS_TR_PASSWORD, ESYS_TR_NONE, ESYS_TR_NONE,
+                    &inSensitive2, &inPublic2, &outsideInfo2, &creationPCR2, &outPrivate2,
+                    &outPublic2, &creationData2, &creationHash2, &creationTicket2);
 
     goto_if_error(r, "Error esys create ", error);
 
@@ -263,11 +231,8 @@ test_esys_unseal_password_auth(ESYS_CONTEXT * esys_context)
      * 3. Load second key
      */
 
-    r = Esys_Load(esys_context,
-                  primaryHandle,
-                  ESYS_TR_PASSWORD,
-                  ESYS_TR_NONE,
-                  ESYS_TR_NONE, outPrivate2, outPublic2, &loadedKeyHandle);
+    r = Esys_Load(esys_context, primaryHandle, ESYS_TR_PASSWORD, ESYS_TR_NONE, ESYS_TR_NONE,
+                  outPrivate2, outPublic2, &loadedKeyHandle);
     goto_if_error(r, "Error esys load ", error);
 
     LOG_INFO("\nSecond Key loaded.");
@@ -279,14 +244,13 @@ test_esys_unseal_password_auth(ESYS_CONTEXT * esys_context)
      * 4. Unseal key
      */
 
-    TPM2B_SENSITIVE_DATA *outData;
-
-    r = Esys_Unseal(esys_context, loadedKeyHandle, ESYS_TR_PASSWORD,
-        ESYS_TR_NONE, ESYS_TR_NONE, &outData);
+    r = Esys_Unseal(esys_context, loadedKeyHandle, ESYS_TR_PASSWORD, ESYS_TR_NONE, ESYS_TR_NONE,
+                    &outData);
     goto_if_error(r, "Error esys Unseal ", error);
 
-    if(memcmp(&(outData->buffer), &(inSensitive2.sensitive.data.buffer),
-        inSensitive2.sensitive.data.size)!=0){
+    if (memcmp(&(outData->buffer), &(inSensitive2.sensitive.data.buffer),
+               inSensitive2.sensitive.data.size)
+        != 0) {
         LOG_ERROR("Error: Unsealed Data is unequal.");
         goto error;
     }
@@ -305,9 +269,19 @@ test_esys_unseal_password_auth(ESYS_CONTEXT * esys_context)
     r = Esys_FlushContext(esys_context, loadedKeyHandle);
     goto_if_error(r, "Error during FlushContext", error);
 
+    Esys_Free(outPublic);
+    Esys_Free(creationData);
+    Esys_Free(creationHash);
+    Esys_Free(creationTicket);
+    Esys_Free(outPublic2);
+    Esys_Free(outPrivate2);
+    Esys_Free(creationData2);
+    Esys_Free(creationHash2);
+    Esys_Free(creationTicket2);
+    Esys_Free(outData);
     return EXIT_SUCCESS;
 
-    error:
+error:
 
     if (loadedKeyHandle != ESYS_TR_NONE) {
         if (Esys_FlushContext(esys_context, loadedKeyHandle) != TSS2_RC_SUCCESS) {
@@ -321,10 +295,20 @@ test_esys_unseal_password_auth(ESYS_CONTEXT * esys_context)
         }
     }
 
+    Esys_Free(outPublic);
+    Esys_Free(creationData);
+    Esys_Free(creationHash);
+    Esys_Free(creationTicket);
+    Esys_Free(outPublic2);
+    Esys_Free(outPrivate2);
+    Esys_Free(creationData2);
+    Esys_Free(creationHash2);
+    Esys_Free(creationTicket2);
+    Esys_Free(outData);
     return EXIT_FAILURE;
 }
 
 int
-test_invoke_esapi(ESYS_CONTEXT * esys_context) {
+test_invoke_esys(ESYS_CONTEXT *esys_context) {
     return test_esys_unseal_password_auth(esys_context);
 }

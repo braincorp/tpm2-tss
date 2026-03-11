@@ -5,26 +5,28 @@
  ******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include "tss2_mu.h"
-#include "tss2_sys.h"
-#include "tss2_esys.h"
+#include <inttypes.h> // for PRIx32, int32_t
+#include <stddef.h>   // for NULL
 
-#include "esys_types.h"
-#include "esys_iutil.h"
-#include "esys_mu.h"
+#include "esys_int.h"        // for ESYS_CONTEXT, RSRC_NODE_T, _ESYS_STATE_...
+#include "esys_iutil.h"      // for iesys_compute_session_value, esys_GetRe...
+#include "esys_types.h"      // for IESYS_RESOURCE
+#include "tss2_common.h"     // for TSS2_RC_SUCCESS, TSS2_RC, TSS2_BASE_RC_...
+#include "tss2_esys.h"       // for ESYS_CONTEXT, ESYS_TR, Esys_TR_Close
+#include "tss2_sys.h"        // for Tss2_Sys_ExecuteAsync, TSS2L_SYS_AUTH_C...
+#include "tss2_tpm2_types.h" // for TPMI_DH_PERSISTENT, TPM2_HT_PERSISTENT
+
 #define LOGMODULE esys
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for return_state_if_error, LOG_ERROR, LOG_D...
 
 /** Store command parameters inside the ESYS_CONTEXT for use during _Finish */
-static void store_input_parameters (
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR objectHandle,
-    TPMI_DH_PERSISTENT persistentHandle)
-{
+static void
+store_input_parameters(ESYS_CONTEXT      *esysContext,
+                       ESYS_TR            objectHandle,
+                       TPMI_DH_PERSISTENT persistentHandle) {
     esysContext->in.EvictControl.objectHandle = objectHandle;
     esysContext->in.EvictControl.persistentHandle = persistentHandle;
 }
@@ -75,19 +77,18 @@ static void store_input_parameters (
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_EvictControl(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR auth,
-    ESYS_TR objectHandle,
-    ESYS_TR shandle1,
-    ESYS_TR shandle2,
-    ESYS_TR shandle3,
-    TPMI_DH_PERSISTENT persistentHandle, ESYS_TR *newObjectHandle)
-{
+Esys_EvictControl(ESYS_CONTEXT      *esysContext,
+                  ESYS_TR            auth,
+                  ESYS_TR            objectHandle,
+                  ESYS_TR            shandle1,
+                  ESYS_TR            shandle2,
+                  ESYS_TR            shandle3,
+                  TPMI_DH_PERSISTENT persistentHandle,
+                  ESYS_TR           *newObjectHandle) {
     TSS2_RC r;
 
-    r = Esys_EvictControl_Async(esysContext, auth, objectHandle, shandle1,
-                                shandle2, shandle3, persistentHandle);
+    r = Esys_EvictControl_Async(esysContext, auth, objectHandle, shandle1, shandle2, shandle3,
+                                persistentHandle);
     return_if_error(r, "Error in async function");
 
     /* Set the timeout to indefinite for now, since we want _Finish to block */
@@ -104,10 +105,9 @@ Esys_EvictControl(
         r = Esys_EvictControl_Finish(esysContext, newObjectHandle);
         /* This is just debug information about the reattempt to finish the
            command */
-        if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN)
-            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32
-                      " => resubmitting command", r);
-    } while ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN);
+        if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN)
+            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32 " => resubmitting command", r);
+    } while (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN);
 
     /* Restore the timeout value to the original value */
     esysContext->timeout = timeouttmp;
@@ -154,22 +154,20 @@ Esys_EvictControl(
  *          of the first response parameter.
  */
 TSS2_RC
-Esys_EvictControl_Async(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR auth,
-    ESYS_TR objectHandle,
-    ESYS_TR shandle1,
-    ESYS_TR shandle2,
-    ESYS_TR shandle3,
-    TPMI_DH_PERSISTENT persistentHandle)
-{
+Esys_EvictControl_Async(ESYS_CONTEXT      *esysContext,
+                        ESYS_TR            auth,
+                        ESYS_TR            objectHandle,
+                        ESYS_TR            shandle1,
+                        ESYS_TR            shandle2,
+                        ESYS_TR            shandle3,
+                        TPMI_DH_PERSISTENT persistentHandle) {
     TSS2_RC r;
-    LOG_TRACE("context=%p, auth=%"PRIx32 ", objectHandle=%"PRIx32 ","
-              "persistentHandle=%"PRIx32 "",
+    LOG_TRACE("context=%p, auth=%" PRIx32 ", objectHandle=%" PRIx32 ","
+              "persistentHandle=%" PRIx32 "",
               esysContext, auth, objectHandle, persistentHandle);
     TSS2L_SYS_AUTH_COMMAND auths;
-    RSRC_NODE_T *authNode;
-    RSRC_NODE_T *objectHandleNode;
+    RSRC_NODE_T           *authNode;
+    RSRC_NODE_T           *objectHandleNode;
 
     /* Check context, sequence correctness and set state to error for now */
     if (esysContext == NULL) {
@@ -179,58 +177,58 @@ Esys_EvictControl_Async(
     r = iesys_check_sequence_async(esysContext);
     if (r != TSS2_RC_SUCCESS)
         return r;
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /* Check input parameters */
     r = check_session_feasibility(shandle1, shandle2, shandle3, 1);
-    return_state_if_error(r, _ESYS_STATE_INIT, "Check session usage");
+    return_state_if_error(r, ESYS_STATE_INIT, "Check session usage");
     store_input_parameters(esysContext, objectHandle, persistentHandle);
 
     /* Retrieve the metadata objects for provided handles */
     r = esys_GetResourceObject(esysContext, auth, &authNode);
-    return_state_if_error(r, _ESYS_STATE_INIT, "auth unknown.");
+    return_state_if_error(r, ESYS_STATE_INIT, "auth unknown.");
     r = esys_GetResourceObject(esysContext, objectHandle, &objectHandleNode);
-    return_state_if_error(r, _ESYS_STATE_INIT, "objectHandle unknown.");
+    return_state_if_error(r, ESYS_STATE_INIT, "objectHandle unknown.");
     /* Use resource handle if object is already persistent */
-    if (objectHandleNode != NULL &&
-        iesys_get_handle_type(objectHandleNode->rsrc.handle) == TPM2_HT_PERSISTENT) {
+    if (objectHandleNode != NULL
+        && iesys_get_handle_type(objectHandleNode->rsrc.handle) == TPM2_HT_PERSISTENT) {
         persistentHandle = objectHandleNode->rsrc.handle;
     }
 
     /* Initial invocation of SAPI to prepare the command buffer with parameters */
-    r = Tss2_Sys_EvictControl_Prepare(esysContext->sys,
-                                      (authNode == NULL) ? TPM2_RH_NULL
-                                       : authNode->rsrc.handle,
-                                      (objectHandleNode == NULL) ? TPM2_RH_NULL
-                                       : objectHandleNode->rsrc.handle,
-                                      persistentHandle);
-    return_state_if_error(r, _ESYS_STATE_INIT, "SAPI Prepare returned error.");
+    r = Tss2_Sys_EvictControl_Prepare(
+        esysContext->sys, (authNode == NULL) ? TPM2_RH_NULL : authNode->rsrc.handle,
+        (objectHandleNode == NULL) ? TPM2_RH_NULL : objectHandleNode->rsrc.handle,
+        persistentHandle);
+    return_state_if_error(r, ESYS_STATE_INIT, "SAPI Prepare returned error.");
 
     /* Calculate the cpHash Values */
     r = init_session_tab(esysContext, shandle1, shandle2, shandle3);
-    return_state_if_error(r, _ESYS_STATE_INIT, "Initialize session resources");
-    iesys_compute_session_value(esysContext->session_tab[0],
-                &authNode->rsrc.name, &authNode->auth);
+    return_state_if_error(r, ESYS_STATE_INIT, "Initialize session resources");
+    if (authNode != NULL)
+        iesys_compute_session_value(esysContext->session_tab[0], &authNode->rsrc.name,
+                                    &authNode->auth);
+    else
+        iesys_compute_session_value(esysContext->session_tab[0], NULL, NULL);
+
     iesys_compute_session_value(esysContext->session_tab[1], NULL, NULL);
     iesys_compute_session_value(esysContext->session_tab[2], NULL, NULL);
 
     /* Generate the auth values and set them in the SAPI command buffer */
     r = iesys_gen_auths(esysContext, authNode, objectHandleNode, NULL, &auths);
-    return_state_if_error(r, _ESYS_STATE_INIT,
-                          "Error in computation of auth values");
+    return_state_if_error(r, ESYS_STATE_INIT, "Error in computation of auth values");
 
     esysContext->authsCount = auths.count;
     if (auths.count > 0) {
         r = Tss2_Sys_SetCmdAuths(esysContext->sys, &auths);
-        return_state_if_error(r, _ESYS_STATE_INIT, "SAPI error on SetCmdAuths");
+        return_state_if_error(r, ESYS_STATE_INIT, "SAPI error on SetCmdAuths");
     }
 
     /* Trigger execution and finish the async invocation */
     r = Tss2_Sys_ExecuteAsync(esysContext->sys);
-    return_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                          "Finish (Execute Async)");
+    return_state_if_error(r, ESYS_STATE_INTERNALERROR, "Finish (Execute Async)");
 
-    esysContext->state = _ESYS_STATE_SENT;
+    esysContext->state = ESYS_STATE_SENT;
 
     return r;
 }
@@ -264,12 +262,9 @@ Esys_EvictControl_Async(
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_EvictControl_Finish(
-    ESYS_CONTEXT *esysContext, ESYS_TR *newObjectHandle)
-{
+Esys_EvictControl_Finish(ESYS_CONTEXT *esysContext, ESYS_TR *newObjectHandle) {
     TSS2_RC r;
-    LOG_TRACE("context=%p, newObjectHandle=%p",
-              esysContext, newObjectHandle);
+    LOG_TRACE("context=%p, newObjectHandle=%p", esysContext, newObjectHandle);
 
     if (esysContext == NULL) {
         LOG_ERROR("esyscontext is NULL.");
@@ -277,12 +272,11 @@ Esys_EvictControl_Finish(
     }
 
     /* Check for correct sequence and set sequence to irregular for now */
-    if (esysContext->state != _ESYS_STATE_SENT &&
-        esysContext->state != _ESYS_STATE_RESUBMISSION) {
+    if (esysContext->state != ESYS_STATE_SENT && esysContext->state != ESYS_STATE_RESUBMISSION) {
         LOG_ERROR("Esys called in bad sequence.");
         return TSS2_ESYS_RC_BAD_SEQUENCE;
     }
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /* Allocate memory for response parameters */
     if (newObjectHandle == NULL) {
@@ -293,9 +287,9 @@ Esys_EvictControl_Finish(
 
     /*Receive the TPM response and handle resubmissions if necessary. */
     r = Tss2_Sys_ExecuteFinish(esysContext->sys, esysContext->timeout);
-    if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN) {
+    if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN) {
         LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32, r);
-        esysContext->state = _ESYS_STATE_SENT;
+        esysContext->state = ESYS_STATE_SENT;
         goto error_cleanup;
     }
 
@@ -303,13 +297,14 @@ Esys_EvictControl_Finish(
      * TPM response codes. */
     if (r == TPM2_RC_RETRY || r == TPM2_RC_TESTING || r == TPM2_RC_YIELDED) {
         LOG_DEBUG("TPM returned RETRY, TESTING or YIELDED, which triggers a "
-            "resubmission: %" PRIx32, r);
-        if (esysContext->submissionCount++ >= _ESYS_MAX_SUBMISSIONS) {
+                  "resubmission: %" PRIx32,
+                  r);
+        if (esysContext->submissionCount++ >= ESYS_MAX_SUBMISSIONS) {
             LOG_WARNING("Maximum number of (re)submissions has been reached.");
-            esysContext->state = _ESYS_STATE_INIT;
+            esysContext->state = ESYS_STATE_INIT;
             goto error_cleanup;
         }
-        esysContext->state = _ESYS_STATE_RESUBMISSION;
+        esysContext->state = ESYS_STATE_RESUBMISSION;
         r = Tss2_Sys_ExecuteAsync(esysContext->sys);
         if (r != TSS2_RC_SUCCESS) {
             LOG_WARNING("Error attempting to resubmit");
@@ -324,11 +319,11 @@ Esys_EvictControl_Finish(
     /* The following is the "regular error" handling. */
     if (iesys_tpm_error(r)) {
         LOG_WARNING("Received TPM Error");
-        esysContext->state = _ESYS_STATE_INIT;
+        esysContext->state = ESYS_STATE_INIT;
         goto error_cleanup;
     } else if (r != TSS2_RC_SUCCESS) {
         LOG_ERROR("Received a non-TPM Error");
-        esysContext->state = _ESYS_STATE_INTERNALERROR;
+        esysContext->state = ESYS_STATE_INTERNALERROR;
         goto error_cleanup;
     }
 
@@ -337,19 +332,17 @@ Esys_EvictControl_Finish(
      * parameter decryption have to be done.
      */
     r = iesys_check_response(esysContext);
-    goto_state_if_error(r, _ESYS_STATE_INTERNALERROR, "Error: check response",
-                        error_cleanup);
+    goto_state_if_error(r, ESYS_STATE_INTERNALERROR, "Error: check response", error_cleanup);
 
     /*
      * After the verification of the response we call the complete function
      * to deliver the result.
      */
     r = Tss2_Sys_EvictControl_Complete(esysContext->sys);
-    goto_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                        "Received error from SAPI unmarshaling" ,
+    goto_state_if_error(r, ESYS_STATE_INTERNALERROR, "Received error from SAPI unmarshaling",
                         error_cleanup);
 
-    ESYS_TR objectHandle = esysContext->in.EvictControl.objectHandle;
+    ESYS_TR      objectHandle = esysContext->in.EvictControl.objectHandle;
     RSRC_NODE_T *objectHandleNode;
     r = esys_GetResourceObject(esysContext, objectHandle, &objectHandleNode);
     goto_if_error(r, "get resource", error_cleanup);
@@ -357,6 +350,9 @@ Esys_EvictControl_Finish(
     /* The object was already persistent */
     if (iesys_get_handle_type(objectHandleNode->rsrc.handle) == TPM2_HT_PERSISTENT) {
         *newObjectHandle = ESYS_TR_NONE;
+        r = Esys_TR_Close(esysContext, &objectHandle);
+        if (r != TSS2_RC_SUCCESS)
+            return r;
     } else {
         /* A new resource is created and updated with date from the not persistent object */
         RSRC_NODE_T *newObjectHandleNode = NULL;
@@ -367,7 +363,7 @@ Esys_EvictControl_Finish(
         newObjectHandleNode->rsrc = objectHandleNode->rsrc;
         newObjectHandleNode->rsrc.handle = esysContext->in.EvictControl.persistentHandle;
     }
-    esysContext->state = _ESYS_STATE_INIT;
+    esysContext->state = ESYS_STATE_INIT;
 
     return TSS2_RC_SUCCESS;
 

@@ -5,21 +5,21 @@
  *******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include <stdlib.h>
+#include <stdlib.h> // for EXIT_FAILURE, EXIT_SUCCESS
 
-#include "tss2_esys.h"
+#include "tss2_common.h"     // for TSS2_RC
+#include "tss2_esys.h"       // for ESYS_TR_NONE, Esys_TestParms, ESYS_CONTEXT
+#include "tss2_tpm2_types.h" // for TPM2_ALG_AES, TPM2_ALG_CFB, TPM2_ALG_NULL
 
-#include "esys_iutil.h"
 #define LOGMODULE test
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for goto_if_error
 
-/** Test the ESAPI function Esys_TestParms.
+/** Test the ESYS function Esys_TestParms.
  *
- * Tested ESAPI commands:
+ * Tested ESYS commands:
  *  - Esys_TestParms() (M)
  *
  * @param[in,out] esys_context The ESYS_CONTEXT.
@@ -27,8 +27,7 @@
  * @retval EXIT_SUCCESS
  */
 int
-test_esys_testparms(ESYS_CONTEXT * esys_context)
-{
+test_esys_testparms(ESYS_CONTEXT *esys_context) {
     TSS2_RC r;
 
     TPMT_PUBLIC_PARMS parameters = {
@@ -50,22 +49,16 @@ test_esys_testparms(ESYS_CONTEXT * esys_context)
         }
     };
 
-    r = Esys_TestParms (
-        esys_context,
-        ESYS_TR_NONE,
-        ESYS_TR_NONE,
-        ESYS_TR_NONE,
-        &parameters
-        );
+    r = Esys_TestParms(esys_context, ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE, &parameters);
     goto_if_error(r, "Error: TestParms", error);
 
     return EXIT_SUCCESS;
 
- error:
+error:
     return EXIT_FAILURE;
 }
 
 int
-test_invoke_esapi(ESYS_CONTEXT * esys_context) {
+test_invoke_esys(ESYS_CONTEXT *esys_context) {
     return test_esys_testparms(esys_context);
 }

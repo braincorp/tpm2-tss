@@ -5,26 +5,19 @@
  * All rights reserved.
  ***********************************************************************/
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include <inttypes.h>
-#include <stdio.h>
-#include <stdbool.h>
-#include <stdlib.h>
+#include <stdio.h>  // for NULL
+#include <stdlib.h> // for setenv
 
-#include <setjmp.h>
-#include <cmocka.h>
+#include "../helper/cmocka_all.h" // for CMUnitTest, cmocka_run_group_tests, cmocka_uni...
 
-#include "tss2_tpm2_types.h"
-
-#include "util/io.h"
 #define LOGMODULE test
-#include "util/log.h"
-
+#include "util/log.h" // for LOG_INFO, LOGLEVEL_UNDEFINED, LOGMODULE_status
 
 static void
-execute_doLog(char *env_log_level){
+execute_doLog(char *env_log_level) {
     setenv("TSS2_LOG", env_log_level, 1);
     LOG_DEBUG("test");
     LOG_TRACE("test");
@@ -36,8 +29,7 @@ execute_doLog(char *env_log_level){
 }
 
 static void
-doLog_test (void **state)
-{
+doLog_test(void **state) {
     execute_doLog("ALL+none");
     execute_doLog("ALL+unused");
     execute_doLog("ALL+error");
@@ -58,10 +50,9 @@ doLog_test (void **state)
 }
 
 int
-main (int argc, char *argv[])
-{
+main(int argc, char *argv[]) {
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test (doLog_test),
+        cmocka_unit_test(doLog_test),
     };
-    return cmocka_run_group_tests (tests, NULL, NULL);
+    return cmocka_run_group_tests(tests, NULL, NULL);
 }

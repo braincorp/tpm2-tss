@@ -1,12 +1,25 @@
 LIBRARY tss2-esys
 EXPORTS
+    Esys_Abort
+    Esys_AC_GetCapability
+    Esys_AC_GetCapability_Async
+    Esys_AC_GetCapability_Finish
+    Esys_AC_Send
+    Esys_AC_Send_Async
+    Esys_AC_Send_Finish
     Esys_ActivateCredential
     Esys_ActivateCredential_Async
     Esys_ActivateCredential_Finish
+    Esys_ACT_SetTimeout
+    Esys_ACT_SetTimeout_Async
+    Esys_ACT_SetTimeout_Finish
     Esys_Certify
     Esys_CertifyCreation
     Esys_CertifyCreation_Async
     Esys_CertifyCreation_Finish
+    Esys_CertifyX509
+    Esys_CertifyX509_Async
+    Esys_CertifyX509_Finish
     Esys_Certify_Async
     Esys_Certify_Finish
     Esys_ChangeEPS
@@ -98,10 +111,12 @@ EXPORTS
     Esys_GetCommandAuditDigest
     Esys_GetCommandAuditDigest_Async
     Esys_GetCommandAuditDigest_Finish
+    Esys_GetCpHash
     Esys_GetPollHandles
     Esys_GetRandom
     Esys_GetRandom_Async
     Esys_GetRandom_Finish
+    Esys_GetRpHash
     Esys_GetSessionAuditDigest
     Esys_GetSessionAuditDigest_Async
     Esys_GetSessionAuditDigest_Finish
@@ -112,12 +127,19 @@ EXPORTS
     Esys_GetTime
     Esys_GetTime_Async
     Esys_GetTime_Finish
+    Esys_GetSysContext
     Esys_HMAC
     Esys_HMAC_Async
     Esys_HMAC_Finish
     Esys_HMAC_Start
     Esys_HMAC_Start_Async
     Esys_HMAC_Start_Finish
+    Esys_MAC
+    Esys_MAC_Async
+    Esys_MAC_Finish
+    Esys_MAC_Start
+    Esys_MAC_Start_Async
+    Esys_MAC_Start_Finish
     Esys_Hash
     Esys_HashSequenceStart
     Esys_HashSequenceStart_Async
@@ -215,6 +237,9 @@ EXPORTS
     Esys_PP_Commands
     Esys_PP_Commands_Async
     Esys_PP_Commands_Finish
+    Esys_Policy_AC_SendSelect
+    Esys_Policy_AC_SendSelect_Async
+    Esys_Policy_AC_SendSelect_Finish
     Esys_PolicyAuthValue
     Esys_PolicyAuthValue_Async
     Esys_PolicyAuthValue_Finish
@@ -311,6 +336,7 @@ EXPORTS
     Esys_SetCommandCodeAuditStatus
     Esys_SetCommandCodeAuditStatus_Async
     Esys_SetCommandCodeAuditStatus_Finish
+    Esys_SetCryptoCallbacks
     Esys_SetPrimaryPolicy
     Esys_SetPrimaryPolicy_Async
     Esys_SetPrimaryPolicy_Finish
@@ -331,6 +357,7 @@ EXPORTS
     Esys_StirRandom_Async
     Esys_StirRandom_Finish
     Esys_TRSess_GetAttributes
+    Esys_TRSess_GetAuthRequired
     Esys_TRSess_GetNonceTPM
     Esys_TRSess_SetAttributes
     Esys_TR_Close
@@ -341,6 +368,7 @@ EXPORTS
     Esys_TR_GetName
     Esys_TR_Serialize
     Esys_TR_SetAuth
+    Esys_TR_GetTpmHandle;
     Esys_TestParms
     Esys_TestParms_Async
     Esys_TestParms_Finish
@@ -353,3 +381,9 @@ EXPORTS
     Esys_ZGen_2Phase
     Esys_ZGen_2Phase_Async
     Esys_ZGen_2Phase_Finish
+    Esys_ECC_Decrypt
+    Esys_ECC_Decrypt_Async
+    Esys_ECC_Decrypt_Finish
+    Esys_ECC_Encrypt
+    Esys_ECC_Encrypt_Async
+    Esys_ECC_Encrypt_Finish

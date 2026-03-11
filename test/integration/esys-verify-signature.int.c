@@ -5,22 +5,21 @@
  *******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include <stdlib.h>
+#include <stdlib.h> // for NULL, EXIT_FAILURE, EXIT_SUCCESS
 
-#include "tss2_esys.h"
-#include "tss2_mu.h"
+#include "tss2_common.h"     // for TSS2_RC, TSS2_RC_SUCCESS
+#include "tss2_esys.h"       // for Esys_Free, ESYS_TR_NONE, Esys_FlushContext
+#include "tss2_tpm2_types.h" // for TPM2B_AUTH, TPM2B_DIGEST, TPM2B_NAME
 
-#include "esys_iutil.h"
 #define LOGMODULE test
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for goto_if_error, LOG_ERROR, LOG_INFO
 
-/** This test is intended to test the ESAPI signing and signature verification.
+/** This test is intended to test the ESYS signing and signature verification.
  *
- * Tested ESAPI commands:
+ * Tested ESYS commands:
  *  - Esys_CreatePrimary() (M)
  *  - Esys_FlushContext() (M)
  *  - Esys_ReadPublic() (M)
@@ -33,19 +32,26 @@
  */
 
 int
-test_esys_verify_signature(ESYS_CONTEXT * esys_context)
-{
+test_esys_verify_signature(ESYS_CONTEXT *esys_context) {
     TSS2_RC r;
     ESYS_TR primaryHandle = ESYS_TR_NONE;
+
+    TPM2B_PUBLIC        *outPublic = NULL;
+    TPM2B_CREATION_DATA *creationData = NULL;
+    TPM2B_DIGEST        *creationHash = NULL;
+    TPMT_TK_CREATION    *creationTicket = NULL;
+
+    TPM2B_NAME     *nameKeySign = NULL;
+    TPM2B_NAME     *keyQualifiedName = NULL;
+    TPMT_SIGNATURE *signature = NULL;
+
+    TPMT_TK_VERIFIED *validation = NULL;
 
     /*
      * 1. Create Primary. This primary will be used as signing key.
      */
 
-    TPM2B_AUTH authValuePrimary = {
-        .size = 5,
-        .buffer = {1, 2, 3, 4, 5}
-    };
+    TPM2B_AUTH authValuePrimary = { .size = 5, .buffer = { 1, 2, 3, 4, 5 } };
 
     TPM2B_SENSITIVE_CREATE inSensitivePrimary = {
         .size = 0,
@@ -62,7 +68,7 @@ test_esys_verify_signature(ESYS_CONTEXT * esys_context)
         .size = 0,
         .publicArea = {
             .type = TPM2_ALG_RSA,
-            .nameAlg = TPM2_ALG_SHA1,
+            .nameAlg = TPM2_ALG_SHA256,
             .objectAttributes = (TPMA_OBJECT_USERWITHAUTH |
                                  TPMA_OBJECT_SIGN_ENCRYPT  |
                                  TPMA_OBJECT_FIXEDTPM |
@@ -79,7 +85,7 @@ test_esys_verify_signature(ESYS_CONTEXT * esys_context)
                  .scheme = {
                       .scheme = TPM2_ALG_RSAPSS,
                       .details = {
-                          .rsapss = { .hashAlg = TPM2_ALG_SHA1 }
+                          .rsapss = { .hashAlg = TPM2_ALG_SHA256 }
                       }
                   },
                  .keyBits = 2048,
@@ -102,90 +108,57 @@ test_esys_verify_signature(ESYS_CONTEXT * esys_context)
         .count = 0,
     };
 
-    TPM2B_AUTH authValue = {
-        .size = 0,
-        .buffer = {}
-    };
+    TPM2B_AUTH authValue = { .size = 0, .buffer = {} };
 
     r = Esys_TR_SetAuth(esys_context, ESYS_TR_RH_OWNER, &authValue);
     goto_if_error(r, "Error: TR_SetAuth", error);
 
-    TPM2B_PUBLIC *outPublic;
-    TPM2B_CREATION_DATA *creationData;
-    TPM2B_DIGEST *creationHash;
-    TPMT_TK_CREATION *creationTicket;
-
-    r = Esys_CreatePrimary(esys_context, ESYS_TR_RH_OWNER, ESYS_TR_PASSWORD,
-                           ESYS_TR_NONE, ESYS_TR_NONE,
-                           &inSensitivePrimary, &inPublic,
-                           &outsideInfo, &creationPCR, &primaryHandle,
-                           &outPublic, &creationData, &creationHash,
+    r = Esys_CreatePrimary(esys_context, ESYS_TR_RH_OWNER, ESYS_TR_PASSWORD, ESYS_TR_NONE,
+                           ESYS_TR_NONE, &inSensitivePrimary, &inPublic, &outsideInfo, &creationPCR,
+                           &primaryHandle, &outPublic, &creationData, &creationHash,
                            &creationTicket);
     goto_if_error(r, "Error esys create primary", error);
+    Esys_Free(outPublic);
+    Esys_Free(creationData);
+    Esys_Free(creationHash);
+    Esys_Free(creationTicket);
 
-    TPM2B_NAME *nameKeySign;
-    TPM2B_NAME *keyQualifiedName;
-
-    r = Esys_ReadPublic(esys_context,
-                        primaryHandle,
-                        ESYS_TR_NONE,
-                        ESYS_TR_NONE,
-                        ESYS_TR_NONE,
-                        &outPublic,
-                        &nameKeySign,
-                        &keyQualifiedName);
+    r = Esys_ReadPublic(esys_context, primaryHandle, ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
+                        &outPublic, &nameKeySign, &keyQualifiedName);
     goto_if_error(r, "Error: ReadPublic", error);
 
-
-    TPMT_SIG_SCHEME inScheme = { .scheme = TPM2_ALG_NULL };
-    TPMT_TK_HASHCHECK hash_validation = {
-        .tag = TPM2_ST_HASHCHECK,
-        .hierarchy = TPM2_RH_OWNER,
-        .digest = {0}
-    };
-    TPMT_SIGNATURE *signature;
-    /* SHA1 digest for PCR register with zeros */
-    TPM2B_DIGEST pcr_digest_zero = {
-        .size = 20,
-        .buffer = { 0x67, 0x68, 0x03, 0x3e, 0x21, 0x64, 0x68, 0x24, 0x7b, 0xd0,
-                    0x31, 0xa0, 0xa2, 0xd9, 0x87, 0x6d, 0x79, 0x81, 0x8f, 0x8f }
-    };
+    TPMT_SIG_SCHEME   inScheme = { .scheme = TPM2_ALG_NULL };
+    TPMT_TK_HASHCHECK hash_validation
+        = { .tag = TPM2_ST_HASHCHECK, .hierarchy = TPM2_RH_OWNER, .digest = { 0 } };
+    /* Digest to be signed. */
+    TPM2B_DIGEST digest = { .size = 32, .buffer = { 1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11,
+                                                    12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                                                    23, 24, 25, 26, 27, 28, 29, 30, 31, 32 } };
 
     /*
-     * 1. Sign pcr_digest_zero and verfiy the signature.
+     * 1. Sign digest and verfiy the signature.
      */
 
-    r = Esys_Sign(
-        esys_context,
-        primaryHandle,
-        ESYS_TR_PASSWORD,
-        ESYS_TR_NONE,
-        ESYS_TR_NONE,
-        &pcr_digest_zero,
-        &inScheme,
-        &hash_validation,
-        &signature);
+    r = Esys_Sign(esys_context, primaryHandle, ESYS_TR_PASSWORD, ESYS_TR_NONE, ESYS_TR_NONE,
+                  &digest, &inScheme, &hash_validation, &signature);
     goto_if_error(r, "Error: Sign", error);
 
-    TPMT_TK_VERIFIED *validation;
-
-    r = Esys_VerifySignature(
-        esys_context,
-        primaryHandle,
-        ESYS_TR_NONE,
-        ESYS_TR_NONE,
-        ESYS_TR_NONE,
-        &pcr_digest_zero,
-        signature,
-        &validation);
+    r = Esys_VerifySignature(esys_context, primaryHandle, ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
+                             &digest, signature, &validation);
     goto_if_error(r, "Error: Sign", error);
 
     r = Esys_FlushContext(esys_context, primaryHandle);
     goto_if_error(r, "Error: FlushContext", error);
 
+    Esys_Free(outPublic);
+
+    Esys_Free(nameKeySign);
+    Esys_Free(keyQualifiedName);
+    Esys_Free(signature);
+    Esys_Free(validation);
     return EXIT_SUCCESS;
 
- error:
+error:
 
     if (primaryHandle != ESYS_TR_NONE) {
         if (Esys_FlushContext(esys_context, primaryHandle) != TSS2_RC_SUCCESS) {
@@ -193,10 +166,18 @@ test_esys_verify_signature(ESYS_CONTEXT * esys_context)
         }
     }
 
+    Esys_Free(outPublic);
+    Esys_Free(creationData);
+    Esys_Free(creationHash);
+
+    Esys_Free(nameKeySign);
+    Esys_Free(keyQualifiedName);
+    Esys_Free(signature);
+    Esys_Free(validation);
     return EXIT_FAILURE;
 }
 
 int
-test_invoke_esapi(ESYS_CONTEXT * esys_context) {
+test_invoke_esys(ESYS_CONTEXT *esys_context) {
     return test_esys_verify_signature(esys_context);
 }

@@ -5,25 +5,28 @@
  ******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include "tss2_mu.h"
-#include "tss2_sys.h"
-#include "tss2_esys.h"
+#include <inttypes.h> // for PRIx32, int32_t
+#include <stdlib.h>   // for NULL, calloc, size_t
+#include <string.h>   // for memcpy
 
-#include "esys_types.h"
-#include "esys_iutil.h"
-#include "esys_mu.h"
+#include "esys_int.h"        // for ESYS_CONTEXT, RSRC_NODE_T, _ESYS_STATE_...
+#include "esys_iutil.h"      // for esys_GetResourceObject, iesys_check_seq...
+#include "esys_mu.h"         // for iesys_MU_IESYS_CONTEXT_DATA_Marshal
+#include "esys_types.h"      // for IESYS_CONTEXT_DATA, IESYS_METADATA, IES...
+#include "tss2_common.h"     // for TSS2_RC, TSS2_RC_SUCCESS, BYTE, TSS2_BA...
+#include "tss2_esys.h"       // for ESYS_CONTEXT, ESYS_TR, Esys_TR_Close
+#include "tss2_sys.h"        // for Tss2_Sys_ExecuteAsync, Tss2_Sys_Context...
+#include "tss2_tpm2_types.h" // for TPMS_CONTEXT, TPM2B_CONTEXT_DATA, TPM2_...
+
 #define LOGMODULE esys
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for LOG_DEBUG, LOG_ERROR, LOG_WARNING, base_rc
 
 /** Store command parameters inside the ESYS_CONTEXT for use during _Finish */
-static void store_input_parameters (
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR saveHandle)
-{
+static void
+store_input_parameters(ESYS_CONTEXT *esysContext, ESYS_TR saveHandle) {
     esysContext->in.ContextSave.saveHandle = saveHandle;
 }
 
@@ -58,11 +61,7 @@ static void store_input_parameters (
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_ContextSave(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR saveHandle,
-    TPMS_CONTEXT **context)
-{
+Esys_ContextSave(ESYS_CONTEXT *esysContext, ESYS_TR saveHandle, TPMS_CONTEXT **context) {
     TSS2_RC r;
 
     r = Esys_ContextSave_Async(esysContext, saveHandle);
@@ -82,10 +81,9 @@ Esys_ContextSave(
         r = Esys_ContextSave_Finish(esysContext, context);
         /* This is just debug information about the reattempt to finish the
            command */
-        if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN)
-            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32
-                      " => resubmitting command", r);
-    } while ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN);
+        if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN)
+            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32 " => resubmitting command", r);
+    } while (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN);
 
     /* Restore the timeout value to the original value */
     esysContext->timeout = timeouttmp;
@@ -116,13 +114,9 @@ Esys_ContextSave(
  *         ESYS_TR objects are ESYS_TR_NONE.
  */
 TSS2_RC
-Esys_ContextSave_Async(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR saveHandle)
-{
+Esys_ContextSave_Async(ESYS_CONTEXT *esysContext, ESYS_TR saveHandle) {
     TSS2_RC r;
-    LOG_TRACE("context=%p, saveHandle=%"PRIx32 "",
-              esysContext, saveHandle);
+    LOG_TRACE("context=%p, saveHandle=%" PRIx32 "", esysContext, saveHandle);
     RSRC_NODE_T *saveHandleNode;
 
     /* Check context, sequence correctness and set state to error for now */
@@ -133,24 +127,22 @@ Esys_ContextSave_Async(
     r = iesys_check_sequence_async(esysContext);
     if (r != TSS2_RC_SUCCESS)
         return r;
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
     store_input_parameters(esysContext, saveHandle);
 
     /* Retrieve the metadata objects for provided handles */
     r = esys_GetResourceObject(esysContext, saveHandle, &saveHandleNode);
-    return_state_if_error(r, _ESYS_STATE_INIT, "saveHandle unknown.");
+    return_state_if_error(r, ESYS_STATE_INIT, "saveHandle unknown.");
 
     /* Initial invocation of SAPI to prepare the command buffer with parameters */
-    r = Tss2_Sys_ContextSave_Prepare(esysContext->sys,
-                                     (saveHandleNode == NULL) ? TPM2_RH_NULL
-                                      : saveHandleNode->rsrc.handle);
-    return_state_if_error(r, _ESYS_STATE_INIT, "SAPI Prepare returned error.");
+    r = Tss2_Sys_ContextSave_Prepare(
+        esysContext->sys, (saveHandleNode == NULL) ? TPM2_RH_NULL : saveHandleNode->rsrc.handle);
+    return_state_if_error(r, ESYS_STATE_INIT, "SAPI Prepare returned error.");
     /* Trigger execution and finish the async invocation */
     r = Tss2_Sys_ExecuteAsync(esysContext->sys);
-    return_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                          "Finish (Execute Async)");
+    return_state_if_error(r, ESYS_STATE_INTERNALERROR, "Finish (Execute Async)");
 
-    esysContext->state = _ESYS_STATE_SENT;
+    esysContext->state = ESYS_STATE_SENT;
 
     return r;
 }
@@ -185,14 +177,10 @@ Esys_ContextSave_Async(
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_ContextSave_Finish(
-    ESYS_CONTEXT *esysContext,
-    TPMS_CONTEXT **context)
-{
+Esys_ContextSave_Finish(ESYS_CONTEXT *esysContext, TPMS_CONTEXT **context) {
     TPMS_CONTEXT *lcontext = NULL;
-    TSS2_RC r;
-    LOG_TRACE("context=%p, context=%p",
-              esysContext, context);
+    TSS2_RC       r;
+    LOG_TRACE("context=%p, context=%p", esysContext, context);
 
     if (esysContext == NULL) {
         LOG_ERROR("esyscontext is NULL.");
@@ -200,37 +188,37 @@ Esys_ContextSave_Finish(
     }
 
     /* Check for correct sequence and set sequence to irregular for now */
-    if (esysContext->state != _ESYS_STATE_SENT &&
-        esysContext->state != _ESYS_STATE_RESUBMISSION) {
+    if (esysContext->state != ESYS_STATE_SENT && esysContext->state != ESYS_STATE_RESUBMISSION) {
         LOG_ERROR("Esys called in bad sequence.");
         return TSS2_ESYS_RC_BAD_SEQUENCE;
     }
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /* Allocate memory for response parameters */
-    lcontext = calloc(sizeof(TPMS_CONTEXT), 1);
+    lcontext = calloc(1, sizeof(TPMS_CONTEXT));
     if (lcontext == NULL) {
         return_error(TSS2_ESYS_RC_MEMORY, "Out of memory");
     }
 
     /*Receive the TPM response and handle resubmissions if necessary. */
     r = Tss2_Sys_ExecuteFinish(esysContext->sys, esysContext->timeout);
-    if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN) {
+    if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN) {
         LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32, r);
-        esysContext->state = _ESYS_STATE_SENT;
+        esysContext->state = ESYS_STATE_SENT;
         goto error_cleanup;
     }
     /* This block handle the resubmission of TPM commands given a certain set of
      * TPM response codes. */
     if (r == TPM2_RC_RETRY || r == TPM2_RC_TESTING || r == TPM2_RC_YIELDED) {
         LOG_DEBUG("TPM returned RETRY, TESTING or YIELDED, which triggers a "
-            "resubmission: %" PRIx32, r);
-        if (esysContext->submissionCount++ >= _ESYS_MAX_SUBMISSIONS) {
+                  "resubmission: %" PRIx32,
+                  r);
+        if (esysContext->submissionCount++ >= ESYS_MAX_SUBMISSIONS) {
             LOG_WARNING("Maximum number of (re)submissions has been reached.");
-            esysContext->state = _ESYS_STATE_INIT;
+            esysContext->state = ESYS_STATE_INIT;
             goto error_cleanup;
         }
-        esysContext->state = _ESYS_STATE_RESUBMISSION;
+        esysContext->state = ESYS_STATE_RESUBMISSION;
         r = Tss2_Sys_ExecuteAsync(esysContext->sys);
         if (r != TSS2_RC_SUCCESS) {
             LOG_WARNING("Error attempting to resubmit");
@@ -245,36 +233,32 @@ Esys_ContextSave_Finish(
     /* The following is the "regular error" handling. */
     if (iesys_tpm_error(r)) {
         LOG_WARNING("Received TPM Error");
-        esysContext->state = _ESYS_STATE_INIT;
+        esysContext->state = ESYS_STATE_INIT;
         goto error_cleanup;
     } else if (r != TSS2_RC_SUCCESS) {
         LOG_ERROR("Received a non-TPM Error");
-        esysContext->state = _ESYS_STATE_INTERNALERROR;
+        esysContext->state = ESYS_STATE_INTERNALERROR;
         goto error_cleanup;
     }
     r = Tss2_Sys_ContextSave_Complete(esysContext->sys, lcontext);
-    goto_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                        "Received error from SAPI unmarshaling" ,
+    goto_state_if_error(r, ESYS_STATE_INTERNALERROR, "Received error from SAPI unmarshaling",
                         error_cleanup);
-
 
     /* ESYS Special Handling Code: Extend the  context with metadata of the object */
     IESYS_CONTEXT_DATA esyscontextData;
-    RSRC_NODE_T *esys_object;
-    size_t offset = 0;
+    RSRC_NODE_T       *esys_object;
+    size_t             offset = 0;
     esyscontextData.reserved = 0;
     memcpy(&esyscontextData.tpmContext.buffer[0], &(lcontext)->contextBlob.buffer[0],
            (lcontext)->contextBlob.size);
     esyscontextData.tpmContext.size = (lcontext)->contextBlob.size;
-    r =  esys_GetResourceObject(esysContext, esysContext->in.ContextSave.saveHandle,
-                                &esys_object);
+    r = esys_GetResourceObject(esysContext, esysContext->in.ContextSave.saveHandle, &esys_object);
     goto_if_error(r, "Error GetResourceObjectn", error_cleanup);
 
     esyscontextData.esysMetadata.size = 0;
     esyscontextData.esysMetadata.data = esys_object->rsrc;
     offset = 0;
-    r = iesys_MU_IESYS_CONTEXT_DATA_Marshal(&esyscontextData,
-                                            &(lcontext)->contextBlob.buffer[0],
+    r = iesys_MU_IESYS_CONTEXT_DATA_Marshal(&esyscontextData, &(lcontext)->contextBlob.buffer[0],
                                             sizeof(TPMS_CONTEXT_DATA), &offset);
     goto_if_error(r, "while marshaling context ", error_cleanup);
 
@@ -292,7 +276,7 @@ Esys_ContextSave_Finish(
     else
         SAFE_FREE(lcontext);
 
-    esysContext->state = _ESYS_STATE_INIT;
+    esysContext->state = ESYS_STATE_INIT;
 
     return TSS2_RC_SUCCESS;
 

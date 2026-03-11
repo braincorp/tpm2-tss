@@ -5,20 +5,19 @@
  ***********************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include "tss2_tpm2_types.h"
-#include "tss2_mu.h"
-#include "sysapi_util.h"
+#include "sysapi_util.h"     // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
+#include "tss2_common.h"     // for TSS2_RC, TSS2_SYS_RC_BAD_REFERENCE, UINT64
+#include "tss2_mu.h"         // for Tss2_MU_UINT32_Marshal, Tss2_MU_UINT64_...
+#include "tss2_sys.h"        // for TSS2_SYS_CONTEXT, TSS2L_SYS_AUTH_COMMAND
+#include "tss2_tpm2_types.h" // for TPMI_RH_PROVISION, TPM2_CC_ClockSet
 
-TSS2_RC Tss2_Sys_ClockSet_Prepare(
-    TSS2_SYS_CONTEXT *sysContext,
-    TPMI_RH_PROVISION auth,
-    UINT64 newTime)
-{
-    _TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
-    TSS2_RC rval;
+TSS2_RC
+Tss2_Sys_ClockSet_Prepare(TSS2_SYS_CONTEXT *sysContext, TPMI_RH_PROVISION auth, UINT64 newTime) {
+    TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
+    TSS2_RC                rval;
 
     if (!ctx)
         return TSS2_SYS_RC_BAD_REFERENCE;
@@ -27,14 +26,10 @@ TSS2_RC Tss2_Sys_ClockSet_Prepare(
     if (rval)
         return rval;
 
-    rval = Tss2_MU_UINT32_Marshal(auth, ctx->cmdBuffer,
-                                  ctx->maxCmdSize,
-                                  &ctx->nextData);
+    rval = Tss2_MU_UINT32_Marshal(auth, ctx->cmdBuffer, ctx->maxCmdSize, &ctx->nextData);
     if (rval)
         return rval;
-    rval = Tss2_MU_UINT64_Marshal(newTime, ctx->cmdBuffer,
-                                  ctx->maxCmdSize,
-                                  &ctx->nextData);
+    rval = Tss2_MU_UINT64_Marshal(newTime, ctx->cmdBuffer, ctx->maxCmdSize, &ctx->nextData);
     if (rval)
         return rval;
 
@@ -45,10 +40,9 @@ TSS2_RC Tss2_Sys_ClockSet_Prepare(
     return CommonPrepareEpilogue(ctx);
 }
 
-TSS2_RC Tss2_Sys_ClockSet_Complete (
-    TSS2_SYS_CONTEXT *sysContext)
-{
-    _TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
+TSS2_RC
+Tss2_Sys_ClockSet_Complete(TSS2_SYS_CONTEXT *sysContext) {
+    TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
 
     if (!ctx)
         return TSS2_SYS_RC_BAD_REFERENCE;
@@ -56,15 +50,14 @@ TSS2_RC Tss2_Sys_ClockSet_Complete (
     return CommonComplete(ctx);
 }
 
-TSS2_RC Tss2_Sys_ClockSet(
-    TSS2_SYS_CONTEXT *sysContext,
-    TPMI_RH_PROVISION auth,
-    TSS2L_SYS_AUTH_COMMAND const *cmdAuthsArray,
-    UINT64 newTime,
-    TSS2L_SYS_AUTH_RESPONSE *rspAuthsArray)
-{
-    _TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
-    TSS2_RC rval;
+TSS2_RC
+Tss2_Sys_ClockSet(TSS2_SYS_CONTEXT             *sysContext,
+                  TPMI_RH_PROVISION             auth,
+                  TSS2L_SYS_AUTH_COMMAND const *cmdAuthsArray,
+                  UINT64                        newTime,
+                  TSS2L_SYS_AUTH_RESPONSE      *rspAuthsArray) {
+    TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
+    TSS2_RC                rval;
 
     rval = Tss2_Sys_ClockSet_Prepare(sysContext, auth, newTime);
     if (rval)

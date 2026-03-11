@@ -1,11 +1,15 @@
 {
     global:
+        Tss2_Sys_Abort;
         Tss2_Sys_AC_GetCapability_Prepare;
         Tss2_Sys_AC_GetCapability_Complete;
         Tss2_Sys_AC_GetCapability;
         Tss2_Sys_AC_Send_Prepare;
         Tss2_Sys_AC_Send_Complete;
         Tss2_Sys_AC_Send;
+        Tss2_Sys_ACT_SetTimeout_Prepare;
+        Tss2_Sys_ACT_SetTimeout_Complete;
+        Tss2_Sys_ACT_SetTimeout;
         Tss2_Sys_ActivateCredential_Prepare;
         Tss2_Sys_ActivateCredential_Complete;
         Tss2_Sys_ActivateCredential;
@@ -15,6 +19,9 @@
         Tss2_Sys_CertifyCreation_Prepare;
         Tss2_Sys_CertifyCreation_Complete;
         Tss2_Sys_CertifyCreation;
+        Tss2_Sys_CertifyX509_Prepare;
+        Tss2_Sys_CertifyX509_Complete;
+        Tss2_Sys_CertifyX509;
         Tss2_Sys_ChangeEPS_Prepare;
         Tss2_Sys_ChangeEPS_Complete;
         Tss2_Sys_ChangeEPS;
@@ -157,6 +164,12 @@
         Tss2_Sys_LoadExternal_Prepare;
         Tss2_Sys_LoadExternal_Complete;
         Tss2_Sys_LoadExternal;
+        Tss2_Sys_MAC_Prepare;
+        Tss2_Sys_MAC_Complete;
+        Tss2_Sys_MAC;
+        Tss2_Sys_MAC_Start_Prepare;
+        Tss2_Sys_MAC_Start_Complete;
+        Tss2_Sys_MAC_Start;
         Tss2_Sys_MakeCredential_Prepare;
         Tss2_Sys_MakeCredential_Complete;
         Tss2_Sys_MakeCredential;
@@ -364,6 +377,12 @@
         Tss2_Sys_ZGen_2Phase_Prepare;
         Tss2_Sys_ZGen_2Phase_Complete;
         Tss2_Sys_ZGen_2Phase;
+        Tss2_Sys_ECC_Encrypt_Prepare;
+        Tss2_Sys_ECC_Encrypt_Complete;
+        Tss2_Sys_ECC_Encrypt;
+        Tss2_Sys_ECC_Decrypt_Prepare;
+        Tss2_Sys_ECC_Decrypt_Complete;
+        Tss2_Sys_ECC_Decrypt;
     local:
         *;
 };

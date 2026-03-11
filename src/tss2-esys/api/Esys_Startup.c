@@ -5,19 +5,21 @@
  ******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include "tss2_mu.h"
-#include "tss2_sys.h"
-#include "tss2_esys.h"
+#include <inttypes.h> // for PRIx32, PRIx16, int32_t
+#include <stddef.h>   // for NULL
 
-#include "esys_types.h"
-#include "esys_iutil.h"
-#include "esys_mu.h"
+#include "esys_int.h"        // for ESYS_CONTEXT, _ESYS_STATE_INTERNALERROR
+#include "esys_iutil.h"      // for iesys_check_sequence_async, iesys_tpm_e...
+#include "tss2_common.h"     // for TSS2_RC, TSS2_RC_SUCCESS, TSS2_BASE_RC_...
+#include "tss2_esys.h"       // for ESYS_CONTEXT, Esys_Startup, Esys_Startu...
+#include "tss2_sys.h"        // for Tss2_Sys_ExecuteAsync, Tss2_Sys_Execute...
+#include "tss2_tpm2_types.h" // for TPM2_RC_INITIALIZE, TPM2_SU, TPM2_RC_RETRY
+
 #define LOGMODULE esys
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for LOG_DEBUG, LOG_ERROR, LOG_WARNING, base_rc
 
 /** One-Call function for TPM2_Startup
  *
@@ -45,10 +47,7 @@
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_Startup(
-    ESYS_CONTEXT *esysContext,
-    TPM2_SU startupType)
-{
+Esys_Startup(ESYS_CONTEXT *esysContext, TPM2_SU startupType) {
     TSS2_RC r;
 
     r = Esys_Startup_Async(esysContext, startupType);
@@ -68,13 +67,18 @@ Esys_Startup(
         r = Esys_Startup_Finish(esysContext);
         /* This is just debug information about the reattempt to finish the
            command */
-        if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN)
-            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32
-                      " => resubmitting command", r);
-    } while ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN);
+        if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN)
+            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32 " => resubmitting command", r);
+    } while (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN);
 
     /* Restore the timeout value to the original value */
     esysContext->timeout = timeouttmp;
+
+    /* Handle TPM upgrade case explicitly */
+    if (r == TPM2_RC_UPGRADE) {
+        return r;
+    }
+
     return_if_error(r, "Esys Finish");
 
     return TSS2_RC_SUCCESS;
@@ -99,13 +103,9 @@ Esys_Startup(
            returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_Startup_Async(
-    ESYS_CONTEXT *esysContext,
-    TPM2_SU startupType)
-{
+Esys_Startup_Async(ESYS_CONTEXT *esysContext, TPM2_SU startupType) {
     TSS2_RC r;
-    LOG_TRACE("context=%p, startupType=%04"PRIx16"",
-              esysContext, startupType);
+    LOG_TRACE("context=%p, startupType=%04" PRIx16 "", esysContext, startupType);
 
     /* Check context, sequence correctness and set state to error for now */
     if (esysContext == NULL) {
@@ -115,17 +115,16 @@ Esys_Startup_Async(
     r = iesys_check_sequence_async(esysContext);
     if (r != TSS2_RC_SUCCESS)
         return r;
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /* Initial invocation of SAPI to prepare the command buffer with parameters */
     r = Tss2_Sys_Startup_Prepare(esysContext->sys, startupType);
-    return_state_if_error(r, _ESYS_STATE_INIT, "SAPI Prepare returned error.");
+    return_state_if_error(r, ESYS_STATE_INIT, "SAPI Prepare returned error.");
     /* Trigger execution and finish the async invocation */
     r = Tss2_Sys_ExecuteAsync(esysContext->sys);
-    return_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                          "Finish (Execute Async)");
+    return_state_if_error(r, ESYS_STATE_INTERNALERROR, "Finish (Execute Async)");
 
-    esysContext->state = _ESYS_STATE_SENT;
+    esysContext->state = ESYS_STATE_SENT;
 
     return r;
 }
@@ -158,12 +157,9 @@ Esys_Startup_Async(
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_Startup_Finish(
-    ESYS_CONTEXT *esysContext)
-{
+Esys_Startup_Finish(ESYS_CONTEXT *esysContext) {
     TSS2_RC r;
-    LOG_TRACE("context=%p",
-              esysContext);
+    LOG_TRACE("context=%p", esysContext);
 
     if (esysContext == NULL) {
         LOG_ERROR("esyscontext is NULL.");
@@ -171,32 +167,32 @@ Esys_Startup_Finish(
     }
 
     /* Check for correct sequence and set sequence to irregular for now */
-    if (esysContext->state != _ESYS_STATE_SENT &&
-        esysContext->state != _ESYS_STATE_RESUBMISSION) {
+    if (esysContext->state != ESYS_STATE_SENT && esysContext->state != ESYS_STATE_RESUBMISSION) {
         LOG_ERROR("Esys called in bad sequence.");
         return TSS2_ESYS_RC_BAD_SEQUENCE;
     }
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /*Receive the TPM response and handle resubmissions if necessary. */
     r = Tss2_Sys_ExecuteFinish(esysContext->sys, esysContext->timeout);
-    if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN) {
+    if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN) {
         LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32, r);
-        esysContext->state = _ESYS_STATE_SENT;
+        esysContext->state = ESYS_STATE_SENT;
         return r;
     }
     /* This block handle the resubmission of TPM commands given a certain set of
      * TPM response codes. */
     if (r == TPM2_RC_RETRY || r == TPM2_RC_TESTING || r == TPM2_RC_YIELDED) {
         LOG_DEBUG("TPM returned RETRY, TESTING or YIELDED, which triggers a "
-            "resubmission: %" PRIx32, r);
-        if (esysContext->submissionCount++ >= _ESYS_MAX_SUBMISSIONS) {
+                  "resubmission: %" PRIx32,
+                  r);
+        if (esysContext->submissionCount++ >= ESYS_MAX_SUBMISSIONS) {
             LOG_WARNING("Maximum number of (re)submissions has been reached.");
-            esysContext->state = _ESYS_STATE_INIT;
+            esysContext->state = ESYS_STATE_INIT;
             return r;
         }
-        esysContext->state = _ESYS_STATE_SENT;
-	r = Tss2_Sys_ExecuteAsync(esysContext->sys);
+        esysContext->state = ESYS_STATE_SENT;
+        r = Tss2_Sys_ExecuteAsync(esysContext->sys);
         if (r != TSS2_RC_SUCCESS) {
             LOG_WARNING("Error attempting to resubmit");
             /* We do not set esysContext->state here but inherit the most recent
@@ -207,21 +203,28 @@ Esys_Startup_Finish(
         LOG_DEBUG("Resubmission initiated and returning RC_TRY_AGAIN.");
         return r;
     }
+
+    /* Handle TPM upgrade case explicitly */
+    if (r == TPM2_RC_UPGRADE) {
+        LOG_INFO("TPM is in upgrade mode, startup command not executed");
+        esysContext->state = ESYS_STATE_INIT;
+        return r;
+    }
+
     /* The following is the "regular error" handling. */
     if (iesys_tpm_error(r) && r != TPM2_RC_INITIALIZE) {
         LOG_WARNING("Received TPM Error");
-        esysContext->state = _ESYS_STATE_INIT;
+        esysContext->state = ESYS_STATE_INIT;
         return r;
     } else if (r != TSS2_RC_SUCCESS && r != TPM2_RC_INITIALIZE) {
         LOG_ERROR("Received a non-TPM Error");
-        esysContext->state = _ESYS_STATE_INTERNALERROR;
+        esysContext->state = ESYS_STATE_INTERNALERROR;
         return r;
     }
     r = Tss2_Sys_Startup_Complete(esysContext->sys);
-    return_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                          "Received error from SAPI unmarshaling" );
+    return_state_if_error(r, ESYS_STATE_INTERNALERROR, "Received error from SAPI unmarshaling");
 
-    esysContext->state = _ESYS_STATE_INIT;
+    esysContext->state = ESYS_STATE_INIT;
 
     return TSS2_RC_SUCCESS;
 }

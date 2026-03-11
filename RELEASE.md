@@ -1,6 +1,11 @@
 # Release Process:
 This document describes the general process that maintainers must follow when making a release of the `tpm2-tss` libraries.
 
+# Milestones
+All releases should have a milestone used to track the release. If the release version is not known, as covered in [Version Numbers](#Version Numbers),
+then an "x" may be used for the unknown number, or the generic term "next" may be used. The description field of the milestone will be used to record
+the CHANGELOG for that release. See [CHANGELOG Update](#CHANGELOG Update) for details.
+
 # Version Numbers
 Our releases will follow the semantic versioning scheme.
 You can find a thorough description of this scheme here: [http://semver.org/](http://semver.org/)
@@ -25,8 +30,12 @@ We append an incremental digit `X` in case more than one release candidate is ne
 
 # Static Analysis
 Before a release is made the `coverity_scan` branch must be updated to the point in git history where the release will be made from.
-This branch must be pushed to github which will cause the travis-ci infrastructure to run an automated coverity scan.
+This branch must be pushed to github which will cause the CI infrastructure to run an automated coverity scan.
 The results of this scan must be dispositioned by the maintainers before the release is made.
+
+# CHANGELOG Update
+Before tagging the repository with the release version, the maintainer MUST update the CHANGELOG file with the contents from the description field
+from the corresponding release milestone and update any missing version string details in the CHANGELOG and milestone entry.
 
 # Git Tags
 When a release is made a tag is created in the git repo identifying the release by the [version string](#Version String).
@@ -76,10 +85,14 @@ Additionally they must:
 * be associated with the maintainers github account (https://help.github.com/articles/adding-a-new-gpg-key-to-your-github-account/)
 
 # Announcements
-Release candidates and proper releases should be announced on the 01.org TPM2 mailing list: https://lists.01.org/mailman/listinfo/tpm2.
+Release candidates and proper releases should be announced on the 01.org TPM2 mailing list:
+  - [https://lore.kernel.org/tpm2/](https://lore.kernel.org/tpm2/)
+  - To subscribe write an email to [tpm2+subscribe@lists.linux.dev](tpm2+subscribe@lists.linux.dev) see also [here](https://subspace.kernel.org/subscribing.html)
+  - The old list https://lists.linuxfoundation.org/mailman/listinfo/tpm2 was decomissioned by Linux
+
 This announcement should be accompanied by a link to the release page on Github as well as a link to the CHANGELOG.md accompanying the release.
 
-# Maintainance
+# Maintenance
 The most recent minor releases will receive bug fixes and bug fix releases.
 Additionally the latest major release will receive bug fixes for another year after release.
 

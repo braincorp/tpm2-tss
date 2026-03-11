@@ -5,19 +5,19 @@
  ***********************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include "tss2_tpm2_types.h"
-#include "tss2_mu.h"
-#include "sysapi_util.h"
+#include "sysapi_util.h"     // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
+#include "tss2_common.h"     // for TSS2_RC, TSS2_SYS_RC_BAD_REFERENCE
+#include "tss2_mu.h"         // for Tss2_MU_UINT32_Marshal
+#include "tss2_sys.h"        // for TSS2_SYS_CONTEXT, TSS2L_SYS_AUTH_COMMAND
+#include "tss2_tpm2_types.h" // for TPMI_SH_POLICY, TPM2_CC_PolicyRestart
 
-TSS2_RC Tss2_Sys_PolicyRestart_Prepare(
-    TSS2_SYS_CONTEXT *sysContext,
-    TPMI_SH_POLICY sessionHandle)
-{
-    _TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
-    TSS2_RC rval;
+TSS2_RC
+Tss2_Sys_PolicyRestart_Prepare(TSS2_SYS_CONTEXT *sysContext, TPMI_SH_POLICY sessionHandle) {
+    TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
+    TSS2_RC                rval;
 
     if (!ctx)
         return TSS2_SYS_RC_BAD_REFERENCE;
@@ -26,9 +26,7 @@ TSS2_RC Tss2_Sys_PolicyRestart_Prepare(
     if (rval)
         return rval;
 
-    rval = Tss2_MU_UINT32_Marshal(sessionHandle, ctx->cmdBuffer,
-                                  ctx->maxCmdSize,
-                                  &ctx->nextData);
+    rval = Tss2_MU_UINT32_Marshal(sessionHandle, ctx->cmdBuffer, ctx->maxCmdSize, &ctx->nextData);
     if (rval)
         return rval;
 
@@ -39,10 +37,9 @@ TSS2_RC Tss2_Sys_PolicyRestart_Prepare(
     return CommonPrepareEpilogue(ctx);
 }
 
-TSS2_RC Tss2_Sys_PolicyRestart_Complete (
-    TSS2_SYS_CONTEXT *sysContext)
-{
-    _TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
+TSS2_RC
+Tss2_Sys_PolicyRestart_Complete(TSS2_SYS_CONTEXT *sysContext) {
+    TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
 
     if (!ctx)
         return TSS2_SYS_RC_BAD_REFERENCE;
@@ -50,14 +47,13 @@ TSS2_RC Tss2_Sys_PolicyRestart_Complete (
     return CommonComplete(ctx);
 }
 
-TSS2_RC Tss2_Sys_PolicyRestart(
-    TSS2_SYS_CONTEXT *sysContext,
-    TPMI_SH_POLICY sessionHandle,
-    TSS2L_SYS_AUTH_COMMAND const *cmdAuthsArray,
-    TSS2L_SYS_AUTH_RESPONSE *rspAuthsArray)
-{
-    _TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
-    TSS2_RC rval;
+TSS2_RC
+Tss2_Sys_PolicyRestart(TSS2_SYS_CONTEXT             *sysContext,
+                       TPMI_SH_POLICY                sessionHandle,
+                       TSS2L_SYS_AUTH_COMMAND const *cmdAuthsArray,
+                       TSS2L_SYS_AUTH_RESPONSE      *rspAuthsArray) {
+    TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
+    TSS2_RC                rval;
 
     rval = Tss2_Sys_PolicyRestart_Prepare(sysContext, sessionHandle);
     if (rval)

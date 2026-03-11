@@ -3,6 +3,391 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 
+## [4.1.0] - 2024-04-26
+### Security
+- Fixed CVE-2024-29040
+
+### Fixed
+- fapi: Fix length check on FAPI auth callbacks
+- mu: Correct error message for errors
+- tss2-rc: fix unknown laer handler dropping bits.
+- fapi: Fix deviation from CEL specification (template_value was used instead of template_data).
+- fapi: Fix json syntax error in FAPI profiles which was ignored by json-c.
+- build: fix build fail after make clean.
+- mu: Fix unneeded size check in TPM2B unmarshaling.
+- fapi: Fix missing parameter encryption.
+- build: Fix failed build with --disable-vendor.
+- fapi: Fix flush of persistent handles.
+- fapi: Fix test provisioning with template with self generated certificate disabled.
+- fapi: Fix error in Fapi_GetInfo it TPM supports SHA3 hash algs.
+- fapi: Revert  pcr extension  for EV_NO_ACTION events.
+- fapi: Fix strange error messages if nv, ext, or policy path does not exits.
+- fapi: Fix segfault caused by wrong allocation of pcr policy.
+- esys: Fix leak in Esys_EvictControl for persistent handles.
+- tss2-tcti: tcti-libtpms: fix test failure on big-endian platform.
+- esys: Add reference counting for Esys_TR_FromTPMPublic.
+- esys: Fix HMAC error if session bind key has an auth value with a trailing 0.
+- fapi: fix usage of self signed certificates in TPM.
+- fapi: Usage of self signed certificates.
+- fapi: A segfault after the error handling of non existing keys.
+- fapi: Fix several leaks.
+- fapi: Fix error handling for policy execution.
+- fapi: Fix usage of persistent handles (should not be flushed)
+- fapi: Fix test provisioning with template (skip test without self generated certificate).
+- fapi: Fix pcr extension for EV_NO_ACTION
+- test: Fix fapi-key-create-policy-signed-keyedhash with P_ECC384 profile
+- tcti_spi_helper_transmit: ensure FIFO is accessed only after TPM reports commandReady bit is set
+- fapi:  Fix read large system eventlog (> UINT16_MAX).
+- esys tests: Fix layer check for TPM2_RC_COMMAND_CODE (for /dev/tpmrm0)
+- test: unit: tcti-libtpms: fix test failed at 32-bit platforms.
+- fapi: Fix possible null pointer dereferencing in Fapi_List.
+- sys: Fix size check in Tss2_Sys_GetCapability.
+- esys: Fix leak in Esys_TR_FromTPMPublic.
+- esys: fix unchecked return value in esys crypto.
+- fapi: Fix wrong usage of local variable in provisioning.
+- fapi: Fix memset 0 in ifapi_json_TPMS_POLICYNV_deserialize.
+- fapi: Fix possible out of bound array access in IMA parser.
+- tcti device: Fix possible unmarshalling from uninitialized variable.
+- fapi: Fix error checking authorization of signing key.
+- fapi: Fix cleanup of policy sessions.
+- fapi: Eventlog  H-CRTM events and different localities.
+- fapi: Fix missing synchronization of quote and eventlog.
+- faii: Fix invalid free in Fapi_Quote with empty eventlog.
+
+### Added
+- tcti: LetsTrust-TPM2Go TCTI module spi-ltt2go.
+- mbedtls: add sha512 hmac.
+- fapi: Enable usage of external keys for Fapi_Encrypt.
+- fapi: Support download of AMD certificates.
+- tcti: Add USB TPM (FTDI MPSSE USB to SPI bridge) TCTI module.
+- fapi: The recreation of primaries (except EK) in the owner hierarchy instead the endorsement hierarchy is fixed.
+- rc: New TPM return codes added.
+- fapi: Further Nuvoton certificates added.
+- tpm_types/esys: Add support for Attestable TPM changes in latest TPM spec.
+- tcti: Add '/dev/tcm0' to default conf
+- fapi: New Nuvoton certificates added.
+- esys: Fix leak in Esys_TR_FromTPMPublic.
+
+### Removed
+- Testing on Ubuntu 18.04 as it's near EOL (May 2023).
+
+
+## [4.0.1] - 2023-01-23
+### Fixed:
+ - A buffer overflow in tss2-rc as CVE-2023-22745.
+
+## [4.0.0] - 2023-01-02
+### Fixed
+  - tcti-ldr: Use heap instead of stack when tcti initialize
+ - Fix usage of NULL pointer if Esys_TR_SetAuth is calles with ESYS_TR_NONE.
+ - Conditionally check user/group manipulation commands.
+ - Store VERSION into the release tarball.
+ - When using DESTDIR for make einstall, do not invoke systemd-sysusers and systemd-tmpfiles.
+ - esys_iutil: fix possible NPD.
+ - Tss2_Sys_Flushcontext: flushHandle was encoded as a handleArea handle and not as parameter one, this affected the contents of cpHash.
+- esys: fix allow usage of HMAC sessions for Esys_TR_FromTPMPublic.
+- fapi: fix usage of policy_nv with a TPM nv index.
+- linking tcti for libtpms against tss2-tctildr. It should be linked against tss2-mu.
+- build: Remove erroneous trailing comma in linker option. Bug #2391.
+- fapi: fix encoding of complex tpm2bs in authorize nv, duplication select and policy template policies. Now the complex and TPMT or TPMS representations can be used. Bug #2383
+- The error message for unsupported FAPI curves was in hex without a leading 0x, make it integer output to clarify.
+- Documentation that had various scalar out pointers as "callee allocated".
+- test: build with opaque FILE structure like in musl libc.
+- Transient endorsement keys were not recreated according to the EK credential profile.
+- Evict control for a persistent EK failed during provisioning if an auth value for the storage hierarchy was set.
+- The authorization of the storage hierarchy is now added. Fixes FAPI: Provisioning error if an auth value is needed for the
+   storage hierarchy  #2438.
+- Usage of a second profile in a path was not possible because the default profile was always used.
+- The setting of an empty auth value for Fapi_Provision was fixed.
+- JSON encoding of a structure TPMS_POLICYAUTHORIZATION used the field keyPEMhashAlg instead of hashAlg as
+   defined in "TCG TSS 2.0 JSON Data Types and Policy Language Specification".  Rename to hashAlg but preserve support
+   for reading keyPEMhashAlg for backwards compatibility.
+- fapi: PolicySecret did not work with keys as secret object.
+- Esys_PCR_SetAuthValue: remembers the auth like other SetAutg ESAPI functions.
+- tests: esys-pcr-auth-value.int moved to destructive tests.
+- FAPI: Fix double free if keystore is corrupted.
+- Marshaling of TPMU_CAPABILITIES data, only field intelPttProperty was broken before.a
+- Spec deviation in Fapi_GetDescription caused description to be NULL when it should be empty string.
+  This is API breaking but considered a bug since it deviated from the FAPI spec.
+- FAPI: undefined reference to curl_url_strerror when using curl less than 7.80.0.
+- FAPI: Fixed support for EK templates in NV inidices per the spec, see #2518 for details.
+- FAPI: fix NPD in ifapi_curl logging.
+- FAPI: Improve documentation fapi-profile
+- FAPI: Fix CURL HTTP handling.
+- FAPI: Return FAPI_RC_IO_ERROR if a policy does not exist in keystore.
+
+### Added
+- TPM version 1.59 support.
+- ci: ubuntu-22.04 added.
+- mbedTLS 3.0 is supported by ESAPI.
+- Add CreationHash to JSON output for usage between applications not using the FAPI keystore, like command line tools.
+- Reduced code size for SAPI.
+- Support for Runtime Switchable ESAPI Crypto Backend via `Esys_SetCryptoCallbacks`.
+- Testing for TCG EK Credential Profile TPM 2.0, Version 2.4 Rev. 3, 2021 for the low and high address range of EK templates.
+- tss2-rc: Tss2_RC_DecodeInfo function for parsing TSS2_RC into the various bit fields.
+- FAPI support for P_ECC384 profile.
+- tss2-rc: Tss2_RC_DecodeInfoError: Function to get a human readable error from a TSS2_RC_INFO returned by
+  Tss2_RC_DecodeInfo
+- tcti: Generic SPI driver, implementors only need to connect to acquire/release, transmit/receive, and sleep/timeout functions.
+- FAPI: Add event logging for Firmware and IMA Events. See #2170 for details.
+- FAPI: Fix Fapi_ChangeAuth updates on hierarchy objects not being reflected across profiles.
+- FAPI: Allow keyedhash keys in PolicySigned.
+- ESAPI: Support sha512 for mbedtls crypto backend.
+- TPM2B_MAX_CAP_BUFFER and mu routines
+- vendor field to TPMU_CAPABILTIIES
+- FAPI: support for PolicyTemplate
+
+### Changed
+- libmu soname from 0:0:0 to 0:1:0.
+- tss2-sys soname from 1:0:0 to 1:1:0
+- tss2-esys: from 0:0:0 to 0:1:0
+- FAPI ignores vendor properties on Fapi_GetInfo
+- FAPI Event Logging JSON format, See #2170 for details.
+
+### Removed
+- Dead struct TPMS_ALGORITHM_DESCRIPTION
+- Dead field intelPttProperty from TPMU_CAPABILITIES
+- Dead code Tss2_MU_TPMS_ALGORITHM_DESCRIPTION_Marshal
+- Dead code Tss2_MU_TPMS_ALGORITHM_DESCRIPTION_Unmarshal
+
+## [3.2.0] - 2022-02-18
+### Fixed
+- FAPI: fix curl_url_set call
+- FAPI: Fix usage of curl url (Should fix Ubuntu 22.04)
+- Fix buffer upcast leading to misalignment
+- Fix check whether SM3 is available
+- Update git.mk to support R/O src-dir
+- Fixed file descriptor leak when tcti initialization failed.
+- 32 Bit builds of the integration tests.
+- Primary key creation, in some cases the unique field was not cleared before calling create primary.
+- Primary keys was used for signing the object were cleared after loading. So access e.g. to the certificate did not work.
+- Primary keys created with Fapi_Create with an auth value, the auth_value was not used in inSensitive to recreate the primary key. Now the auth value callback is used to initialize inSensitive.
+- The not possible usage of policies for primary keys generated with Fapi_CreatePrimary has been fixed.
+- An infinite loop when parsing erroneous JSON was fixed in FAPI.
+- A buffer overflow in ESAPI xor parameter obfuscation was fixed.
+- Certificates could be read only once in one application The setting the init state of the state automaton for getting certificates was fixed.
+- A double free when executing policy action was fixed.
+- A leak in Fapi_Quote was fixed.
+- The  wrong file locking in FAPI IO was fixed.
+- Enable creation of tss group and user on systems with busybox for fapi.
+- One fapi integration test did change the auth value of the storage hierarchy.
+- A leak in fapi crypto with ossl3 was fixed.
+- Add initial camelia support to FAPI
+- Fix tests of fapi PCR
+- Fix tests of ACT functionality if not supported by pTPM
+- Fix compiler (unused) warning when building without debug logging
+- Fix leaks in error cases of integration tests
+- Fix memory leak after ifapi_init_primary_finish failed
+- Fix double-close of stream in FAPI
+- Fix segfault when ESYS_TR_NONE is passed to Esys_TR_GetName
+- Fix the authorization of hierarchy objects used in policy secret.
+- Fix check of qualifying data in Fapi_VerifyQuote.
+- Fix some  leaks in FAPI error cases.
+- Make scripts compatible with non-posix shells where `test` does not know `-a` and `-o`.
+- Fix usage of variable not initialized when fapi keystore is empty.
+
+### Added
+- Add additional IFX root CAs
+- Added support for SM2, SM3 and SM4.
+- Added support for OpenSSL 3.0.0.
+- Added authPolicy field to the TPMU_CAPABILITIES union.
+- Added actData field to the TPMU_CAPABILITIES union.
+- Added TPM2_CAP_AUTH_POLICIES
+- Added TPM2_CAP_ACT constants.
+- Added updates to the marshalling and unmarshalling of the TPMU_CAPABILITIES union.
+- Added updated to the FAPI serializations and deserializations of the TPMU_CAPABILITIES union and associated types.
+- Add CODE_OF_CONDUCT
+- tcti-mssim and tcti-swtpm gained support for UDX communication
+- Missing constant for TPM2_RH_PW
+
+### Removed
+- Removed support for OpenSSL < 1.1.0.
+- Marked TPMS_ALGORITHM_DESCRIPTION and corresponding MU routines as deprecated.
+  Those were errorous typedefs that are not use and not useful. So we will remove this with 3.3
+- Marked TPM2_RS_PW as deprecated. Use TPM2_RH_PW instead.
+
+## [3.1.0] - 2021-05-17
+### Fixed
+- Fixed possible access outside the array in ifapi_calculate_tree.
+- Fix CVE-2020-24455 FAPI PolicyPCR not instatiating correctly
+  Note: that all TPM object created with a PolicyPCR with the currentPcrs
+  and currentPcrsAndBank options have been created with an incorrect policy
+  that ommits PCR checks. All these objects have to be recreated!
+- Fixed segfault in Fapi_Finalize where a free of a constant string could occur.
+- Fixed binding to ESYS_TR_RH_NULL for ESYS auth sessions.
+- Fixed read eagain error handling for freeBSD.
+- Fixed error cleanup for key loading and policy execution.
+- Fixed initialization of default log_dir.
+- Fixed cleanup in several error cases in Fapi.
+- Added initialise 'out' parameter in ifapi_json_IFAPI_CONFIG_deserialize.
+- Fixed Regression in Fapi_List.
+- Fixed memory leak in policy calculation.
+- Fixed setting of the system flag of NV objects:
+  This will let NV object metadata be created system-wide always instead of
+  locally in the user. Existing metadata will remain in the user directory.
+  It can be moved to the corresponding systemstore manually if needed.
+- Fixed fapi policy searching, when a policyRef was provided.
+- Fapi accepts EK-Certs without CRL dist point.
+- Fixed bad return codes in Fapi_List.
+- Fixed memleak in Fapi policy execution.
+- Fixed coverity NULL-pointer check in Fapi.
+- Fixed the written flag of NV objects in FAPI PolicyNV commands being unset.
+- Fixed deleting of policy files.
+- Fixed wrong file loading during object search.
+- Fixed a memory leak in async keystore load.
+- Fixed bug in FAPI NV creation with custom index values.
+- Fixed leftover sessions in error cases in FAPI.
+- Fixed execution of FAPI policies in some cases.
+- Fixed  handling 0x hex prefixes for TPMU_HA in JSON encoding.
+- Fixed fix doxygen header of function iesys_update_session_flags.
+- Fixed issue where nonceTPM was included twice in HMAC.
+- Fixed issue of unused variable when enabling lower default log levels.
+- Fixed 'partial' may be used uninitialized in tcti-device.
+
+### Added
+- Added two new TPM commands TPM2_CC_CertifyX509 and TPM2_CC_ACT_SetTimeout
+  along with SYS and ESYS API calls, new structures definitions, and marshal
+  funtions for them. This make the TSS2 alligned with TPM2 1.59 specification.
+- Support for auth values larger than an objects nameAlg for NV and key objects.
+- Async mode of operation for mssim TCTI module
+- Added pcap TCTI.
+- Added GlobalSign TPM Root CA certs to FAPI cert store.
+- Added support for auth value sizes bigger than the size of the name hash alg.
+  for keys and NV objects.
+- Added better error messages in several FAPI errors.
+- Added checks to FAPI policy paths.
+- Added checks if FAPI is correctly provisioned.
+
+### Changed
+- Changed CI from Travis to GH actions
+- Changed the default hash algorithm from sha1 to sha256 in all FAPI
+  integration tests
+- Changed tests to use SHA256 over SHA1.
+- Changed EncryptDecrypt mode type to align with TPM2.0 spec 1.59.
+
+
+## [3.0.0] - 2020-08-05
+### Changed or Fixed
+- Added setgid perms and ACL for FAPI keystore to allow r/w access for tss group
+- Fixed duoble json_object_put call in event log processing.
+- Added TSS root dir to include path in CFLAGS
+- Switch default FAPI profile to ECC.
+- Enabled all PCR registers for SHA256 bank in the distribution profiles.
+- Added fix computation of PCR logs and PCR digest of PCR logs.
+- Added fix size check for Fapi_Encrypt.
+- Improved log messages in FAPI
+- Introduced new FAPI return codes FAPI_RC_ALREADY_PROVISIONED,
+  TSS2_BASE_RC_NOT_PROVISIONED, and TSS2_FAPI_RC_NOT_PROVISIONED.
+- Added missing retry in Fapi_Initialize_Finish.
+- Added man pages for FAPI config files
+- Deleted invalid keys from the null hierarchy.
+- Fixed check of auth state for lockout set.
+- Fixed check of directory access rights in Fapi_Initialize.
+- Enabled usage of NULL hierarchy in FAPI.
+- Added address sanitizer to CI for gcc.
+- Added asserts to callback functions in integration tests
+- Added check event log file before Fapi_PcrExtend.
+- Fixed hierarchy usage and authentication in Fapi_Provision,
+  Fapi_GetCertificate, and Fapi_Delete.
+- Added description for primary keys to profile.
+- Fixed non async call of Esys_ContextSave in Fapi_GetEsysBlobs.
+- Added check for hierarchy needed for EvictControl for deleting objects.
+- Fixed copying the primary during key loading.
+- Added a check that prevents deleting of default directories.
+- Added verification to provisioning.
+- Fixed usage of persistent handles.
+- Added missing selectors for some TPMU types in marshal
+- Added handling for invalid selector when (um)marshal TPMU types
+- Improved presentation of Fapi_GetInfo.
+- Fixed computation of the size of a PCR selection.
+- Added a check for valid pathnames in keystore module.
+- Added a check for deleting of the SRK.
+- Fixed computation of random value for objects used for sealing.
+- Fixed return code for event parsing errors.
+- Added content of the config file to FAPI Info.
+- Fixed NV index and path handling in NV creation.
+- Fixed path checking for keys.
+- Fixed version retrieval method in Fapi_GetInfo.
+- Fixed path usage in Fapi_Import.
+- Fixed settings of default flags for keys creation.
+- Fixed handle usage in Fapi_ChangeAuth
+- Fixed systemd-sysusers/-tmpfiles invocation
+- Changed FAPI callback API.
+- Fixed initialization of app data in Esys_Initialize
+- Fixed certificate handling for TPMs without stored certificate.
+- Replaced strtok with strtok_r
+- Changed return codes from tcti macros according to the spec
+- Added check that prevents overwriting objects in key store.
+- Added session usage to FAPI provisioning.
+- Enabled CI for FreeBSD
+- Changed hierarchy param type of Esys_Hash(), Esys_HierarchyControl(),
+  Esys_LoadExternal(), and Esys_SequenceComplete() calls along with
+  their Async versions according to the spec.
+  The can accept both types TPM2_RH and ESYS_TRs as then don't collide.
+- Changed Tss2_Sys_ReadClock to allow audit session to be consistent
+  with the rev 1.38 version of the TPM2.0 architecture spec.
+  Note: This change brakes ABI backwards compatibility.
+- Silenced expected errors from Esys_TestParams.
+- Many improvements for CI builds on Travis and Cirrus, unit tests
+  and integration test code
+
+### Added
+- Added SWTPM-TCTI
+- Added mbedTLS ESYS crypto backend
+- Added the Command TCTI
+- Added new API function Fapi_GetEsysBlobs.
+- Added new feature for importing keys with Fapi_Import.
+
+### Removed
+- Removed libgcrypt ESYS crypto backend
+- Removed dev-tcti partial read mode configuration flag
+- Removed dev-tcti async mode configuration flag
+- Removed obsolete LIBDL_LDFLAGS and replaced broken @LIBDL_LDFLAGS@ with @LIBADD_DL@
+- Removed deprecated OpenSSL functions from FAPI and ESYS
+
+## [2.4.0] - 2020-03-11
+### Added
+- Added a new Feature API (FAPI) implementation
+- Added Esys_TRSess_GetAuthRequired() ESAPI function
+- Added Esys_TR_GetTpmHandle() SAPI function
+- Added Esys_GetSysContext() SAPI function
+- Added the with-sanitizer configure option
+- Added CI for FreeBSD
+- Added tcti-cmd
+
+### Changed
+- Changed MSSIM TCTI to be async capable
+- Removed TCTI loaders from ESYS dependencies in pkg-config
+- Changed getPollHandles to allow num_handles query
+- Improved CI builds
+- Converted builds to docker builds
+- Number of fixes and improvements in the test code
+- Changed tcti-device in non-async mode to allways block
+
+### Fixed
+- Fixed hmac calculation for tpm2_clear command in ESAPI
+- Fixed mixing salted and unsalted sessions in the same ESAPI context
+- Removed use of VLAs from TPML marshal code
+- Fixed setting C++ compiler for non-fuzzing builds at configure
+- Fixed setting the name of session objects
+- Fixed page alignment errors in Sys_Get/SetAuths functions
+- Fixed potential buffer overflow in tcti_mssim_receive
+- Fixed invalid memory alloc failure in Tss2_TctiLdr_Initialize
+- Fixed list of exported symbols map for libtss2-mu
+- Fixed resource name calculation in Esys_CreateLoaded
+- Fixed keysize of ECC curve TPM2_ECC_NISTP224
+- Fixed segmentation fault in tctildr if name_conf was too big
+- Fixed memory leak in tctildr-tcti tests
+- Fixed HMAC generation for policy sessions
+- Added check for object node before calling compute_session_value function
+- Fixed auth calculation in Esys_StartAuthSession called with optional parameters
+- Fixed compute_encrypted_salt error handling in Esys_StartAuthSession
+- Fixed exported symbols map for libtss2-mu
+
+### Removed
+- Remove duplicate ESYS entries from map file
+- Removed the private implementation of strndup from tctildr
+
 ## [2.3.0] - 2019-08-13
 ### Added
 - tss2-tctildr: A new library that helps with tcti initialization
@@ -27,7 +412,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 
 ### Removed
 - Removed libtss2-mu from "Requires" field of libtss2-esys.pc
-  Needs to be added explicitely now
+  Needs to be added explicitly now
 
 ### Fixed
 - All fixes from 2.2.1, 2.2.2 and 2.2.3
@@ -288,13 +673,13 @@ resourcemgr.
 communicating with a real TPM.
 ### Changed
 - Rearranged directory structure in a more logical fashion.
-- Changed name of Linux makefiles from “makefile.linux” to makefile. This was
+- Changed name of Linux makefiles from "makefile.linux" to makefile. This was
 done in preparation for autotools porting (future enhancement).
-- Changed tpm library’s windows makefile from “makefile” to “windows.mak”.
+- Changed tpm library's windows makefile from "makefile" to "windows.mak".
 - Changed all makefiles and Visual Studio solution and project files to work
 with new directory structure.
 - Split out debug and TPM platform command code in tpmsockets.cpp into
-separate files. This code didn’t belong in this file.
+separate files. This code didn't belong in this file.
 
 ## [0.97] - 2015-??-??
 ### Added
@@ -394,7 +779,7 @@ at the size.
 and CopySensitiveCreateIn: not handling NULL outpul parameters correctly.
 - Changes all instances of calls to ExecuteFinish to a timeout that works for
 all cases including communicating with the simulator over the network.
-- Fixed call to LoadExternal in TestUnseal--needed to pass in a NULL pointer
+- Fixed call to LoadExternal in TestUnseal: needed to pass in a NULL pointer
 for the inSensitive parameter.
 - Fixed bug in CreatePrimary: not passing correct pointer for inSensitive.
 - Fixed timeouts for all ExecuteFinish calls in test application.
@@ -426,11 +811,11 @@ the ContextSave command failed.
 initialized was re-initing the whole driver.
 - Updated to latest 1.19 header files.
 - Fixed bugs in resource manager:
-- FindOldestSession wasn't working correctly—it was just finding the first
+- FindOldestSession wasn't working correctly: it was just finding the first
 one.
 - HandleGap needed to un-gap all the session contexts from the older interval.
 It wasn't doing that.
-- Fixed bug in handling of command line options—specifying none would cause
+- Fixed bug in handling of command line options: specifying none would cause
 program to error out.
 - Fixed issues in cleanup of TestStartAuthSession test. It was leaving some
 sessions alive.
@@ -610,7 +995,7 @@ out of entries because we weren't removing sessions that were closed.
 set to 0xff. Now the high nibble is left intact so that applications can
 determine the type of the handle.
 ### Notes
-1. Testing is not comprehensive. See test code to see what’s tested. Please
+1. Testing is not comprehensive. See test code to see what's tested. Please
 report any bugs found so that fixes can be rolled out.
 2. Range checks within SAPI code not yet implemented.
 3. Still need to add support for separate debug and production builds.
@@ -642,9 +1027,9 @@ to all the other commands.
 ## [0.80] - 2013-11-19
 ### Added
 - Added code to create a new session for reading/writing the NV index after
-it’s first written. This tests the other case for bound sessions.
+it's first written. This tests the other case for bound sessions.
 - Added routine to start policy sessions.
-- Added policy test code--not used currently.
+- Added policy test code: not used currently.
 ### Changed
 - Fixed bugs in resource manager.
 - Fixed bugs with salted session tests.
@@ -717,7 +1102,7 @@ function.
 - Updated headers with Intel license text.
 - Split sockets driver into separate code module.
 - SALTED session test fixes:
-  * Fixed CopyRSAEncryptIon function--wasn't handling some cases correctly.
+  * Fixed CopyRSAEncryptIon function: wasn't handling some cases correctly.
   * Backed out change to make parameterSize passed to ComputeSessionHmacPtr
 function a UINT16. Needs to be UINT32.
   * For ComputeSessionHmacPtr, changed parameterSize to UINT16 to fix build

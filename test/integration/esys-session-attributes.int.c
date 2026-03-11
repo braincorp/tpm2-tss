@@ -5,27 +5,26 @@
  *******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include <stdlib.h>
+#include <stdint.h> // for uint8_t
+#include <stdlib.h> // for NULL, size_t, EXIT_FAILURE, EXIT_SUCCESS
 
-#include "tss2_esys.h"
-#include "tss2_mu.h"
+#include "tss2_common.h"     // for TSS2_RC, TSS2_RC_SUCCESS, TSS2_TCTI_RC_...
+#include "tss2_esys.h"       // for ESYS_TR_NONE, Esys_FlushContext, Esys_Free
+#include "tss2_mu.h"         // for Tss2_MU_TPMS_AUTH_COMMAND_Unmarshal
+#include "tss2_tpm2_types.h" // for TPMA_SESSION_ENCRYPT, TPM2_ALG_SHA256
 
-#include "esys_iutil.h"
 #define LOGDEFAULT LOGLEVEL_INFO
-#define LOGMODULE test
-#include "util/log.h"
-#include "util/aux_util.h"
+#define LOGMODULE  test
+#include "util/log.h" // for LOGLEVEL_INFO, goto_if_error, LOG_ERROR
 
-extern TSS2_RC
-(*transmit_hook) (const uint8_t *command_buffer, size_t command_size);
+extern TSS2_RC (*transmit_hook)(const uint8_t *command_buffer, size_t command_size);
 
-size_t handles;
-TPMA_SESSION session1_attributes;
-static TSS2_RC
-hookcheck_session1 (const uint8_t *command_buffer, size_t command_size);
+size_t         handles;
+TPMA_SESSION   session1_attributes;
+static TSS2_RC hookcheck_session1(const uint8_t *command_buffer, size_t command_size);
 
 /** Test encrypt / decrypt session flags propagation
  *
@@ -38,14 +37,15 @@ hookcheck_session1 (const uint8_t *command_buffer, size_t command_size);
  * @retval EXIT_SUCCESS
  */
 int
-test_esys_session_attributes(ESYS_CONTEXT * esys_context)
-{
-    TSS2_RC r;
-    ESYS_TR objectHandle = ESYS_TR_NONE;
-    ESYS_TR session = ESYS_TR_NONE;
-    TPMT_SYM_DEF symmetric = {.algorithm = TPM2_ALG_XOR,
-                              .keyBits = { .exclusiveOr = TPM2_ALG_SHA1 },
-                              .mode = {.aes = TPM2_ALG_CFB}};
+test_esys_session_attributes(ESYS_CONTEXT *esys_context) {
+    TSS2_RC       r;
+    ESYS_TR       objectHandle = ESYS_TR_NONE;
+    ESYS_TR       session = ESYS_TR_NONE;
+    TPM2B_DIGEST *rdata = NULL;
+
+    TPMT_SYM_DEF symmetric = { .algorithm = TPM2_ALG_XOR,
+                               .keyBits = { .exclusiveOr = TPM2_ALG_SHA256 },
+                               .mode = { .aes = TPM2_ALG_CFB } };
 
     TPM2B_SENSITIVE_CREATE inSensitive = {
         .size = 0,
@@ -66,7 +66,7 @@ test_esys_session_attributes(ESYS_CONTEXT * esys_context)
         .size = 0,
         .publicArea = {
             .type = TPM2_ALG_RSA,
-            .nameAlg = TPM2_ALG_SHA1,
+            .nameAlg = TPM2_ALG_SHA256,
             .objectAttributes = (TPMA_OBJECT_USERWITHAUTH |
                                  TPMA_OBJECT_RESTRICTED |
                                  TPMA_OBJECT_DECRYPT |
@@ -99,20 +99,15 @@ test_esys_session_attributes(ESYS_CONTEXT * esys_context)
 
     TPM2B_DATA outsideInfo = {
         .size = 0,
-        .buffer = {}
-        ,
+        .buffer = {},
     };
 
     TPML_PCR_SELECTION creationPCR = {
         .count = 0,
     };
 
-    TPM2B_DIGEST *rdata;
-
-    r = Esys_StartAuthSession(esys_context, ESYS_TR_NONE, ESYS_TR_NONE,
-                              ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
-                              NULL,
-                              TPM2_SE_HMAC, &symmetric, TPM2_ALG_SHA1,
+    r = Esys_StartAuthSession(esys_context, ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
+                              ESYS_TR_NONE, NULL, TPM2_SE_HMAC, &symmetric, TPM2_ALG_SHA256,
                               &session);
     goto_if_error(r, "Error: During initialization of session", error);
 
@@ -123,16 +118,15 @@ test_esys_session_attributes(ESYS_CONTEXT * esys_context)
     goto_if_error(r, "Error: During initialization of attributes", error);
 
     handles = 1;
-    session1_attributes = TPMA_SESSION_CONTINUESESSION | TPMA_SESSION_DECRYPT |
-                          TPMA_SESSION_ENCRYPT;
+    session1_attributes
+        = TPMA_SESSION_CONTINUESESSION | TPMA_SESSION_DECRYPT | TPMA_SESSION_ENCRYPT;
     transmit_hook = hookcheck_session1;
 
-    r = Esys_CreatePrimary(esys_context, ESYS_TR_RH_OWNER, session,
-                           ESYS_TR_NONE, ESYS_TR_NONE, &inSensitive, &inPublic,
-                           &outsideInfo, &creationPCR, &objectHandle,
-                           NULL, NULL, NULL, NULL);
+    r = Esys_CreatePrimary(esys_context, ESYS_TR_RH_OWNER, session, ESYS_TR_NONE, ESYS_TR_NONE,
+                           &inSensitive, &inPublic, &outsideInfo, &creationPCR, &objectHandle, NULL,
+                           NULL, NULL, NULL);
     transmit_hook = NULL;
-    goto_if_error(r, "Error esapi create primary", error);
+    goto_if_error(r, "Error esys create primary", error);
 
     r = Esys_FlushContext(esys_context, objectHandle);
     goto_if_error(r, "Error during FlushContext", error);
@@ -141,15 +135,12 @@ test_esys_session_attributes(ESYS_CONTEXT * esys_context)
     goto_if_error(r, "Flushing context", error);
 
     /* Testing only Encrypt, i.e. responses, set */
-    r = Esys_StartAuthSession(esys_context, ESYS_TR_NONE, ESYS_TR_NONE,
-                              ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
-                              NULL,
-                              TPM2_SE_HMAC, &symmetric, TPM2_ALG_SHA1,
+    r = Esys_StartAuthSession(esys_context, ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
+                              ESYS_TR_NONE, NULL, TPM2_SE_HMAC, &symmetric, TPM2_ALG_SHA256,
                               &session);
     goto_if_error(r, "Error: During initialization of session", error);
 
-    r = Esys_TRSess_SetAttributes(esys_context, session,
-                                  TPMA_SESSION_ENCRYPT,
+    r = Esys_TRSess_SetAttributes(esys_context, session, TPMA_SESSION_ENCRYPT,
                                   TPMA_SESSION_DECRYPT | TPMA_SESSION_ENCRYPT);
     goto_if_error(r, "Error: During initialization of attributes", error);
 
@@ -157,17 +148,16 @@ test_esys_session_attributes(ESYS_CONTEXT * esys_context)
     session1_attributes = TPMA_SESSION_CONTINUESESSION | TPMA_SESSION_ENCRYPT;
     transmit_hook = hookcheck_session1;
 
-    r = Esys_GetRandom(esys_context, session, ESYS_TR_NONE, ESYS_TR_NONE,
-                       10, &rdata);
+    r = Esys_GetRandom(esys_context, session, ESYS_TR_NONE, ESYS_TR_NONE, 10, &rdata);
+    Esys_Free(rdata);
     transmit_hook = NULL;
-    goto_if_error(r, "Error esapi create primary", error);
+    goto_if_error(r, "Error esys create primary", error);
 
     transmit_hook = hookcheck_session1;
 
-    r = Esys_GetRandom(esys_context, session, ESYS_TR_NONE, ESYS_TR_NONE,
-                       10, &rdata);
+    r = Esys_GetRandom(esys_context, session, ESYS_TR_NONE, ESYS_TR_NONE, 10, &rdata);
     transmit_hook = NULL;
-    goto_if_error(r, "Error esapi create primary", error);
+    goto_if_error(r, "Error esys create primary", error);
 
     LOGBLOB_INFO(&rdata->buffer[0], rdata->size, "rdata");
 
@@ -175,9 +165,10 @@ test_esys_session_attributes(ESYS_CONTEXT * esys_context)
     r = Esys_FlushContext(esys_context, session);
     goto_if_error(r, "Flushing context", error);
 
+    Esys_Free(rdata);
     return EXIT_SUCCESS;
 
- error:
+error:
     LOG_ERROR("\nError Code: %x\n", r);
 
     if (session != ESYS_TR_NONE) {
@@ -192,21 +183,21 @@ test_esys_session_attributes(ESYS_CONTEXT * esys_context)
         }
     }
 
-
+    Esys_Free(rdata);
     return EXIT_FAILURE;
 }
 
 int
-test_invoke_esapi(ESYS_CONTEXT * esys_context) {
+test_invoke_esys(ESYS_CONTEXT *esys_context) {
     return test_esys_session_attributes(esys_context);
 }
 
 static TSS2_RC
-hookcheck_session1 (const uint8_t *command_buffer, size_t command_size)
-{
+hookcheck_session1(const uint8_t *command_buffer, size_t command_size) {
     TSS2_RC r;
-    size_t offset = 10; /* header */;
-    TPM2_ST tag;
+    size_t  offset = 10; /* header */
+    ;
+    TPM2_ST           tag;
     TPMS_AUTH_COMMAND session1;
 
     LOGBLOB_INFO(command_buffer, command_size, "command");
@@ -224,13 +215,12 @@ hookcheck_session1 (const uint8_t *command_buffer, size_t command_size)
     r = Tss2_MU_UINT32_Unmarshal(command_buffer, command_size, &offset, NULL);
     return_if_error(r, "Unmarshalling AuthSize failed");
 
-    r = Tss2_MU_TPMS_AUTH_COMMAND_Unmarshal(command_buffer, command_size, &offset,
-                                         &session1);
+    r = Tss2_MU_TPMS_AUTH_COMMAND_Unmarshal(command_buffer, command_size, &offset, &session1);
     return_if_error(r, "Unmarshalling first session failed");
 
     if (session1.sessionAttributes != session1_attributes) {
-        LOG_ERROR("Session Attribute mismatch. Expected: 0x%08x Got: 0x%08x",
-                  session1_attributes, session1.sessionAttributes);
+        LOG_ERROR("Session Attribute mismatch. Expected: 0x%08x Got: 0x%08x", session1_attributes,
+                  session1.sessionAttributes);
         return TSS2_TCTI_RC_BAD_VALUE;
     }
 

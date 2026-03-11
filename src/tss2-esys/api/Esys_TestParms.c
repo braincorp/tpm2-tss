@@ -5,19 +5,21 @@
  ******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include "tss2_mu.h"
-#include "tss2_sys.h"
-#include "tss2_esys.h"
+#include <inttypes.h> // for PRIx32, int32_t
+#include <stddef.h>   // for NULL
 
-#include "esys_types.h"
-#include "esys_iutil.h"
-#include "esys_mu.h"
+#include "esys_int.h"        // for ESYS_CONTEXT, _ESYS_STATE_INIT, _ESYS_S...
+#include "esys_iutil.h"      // for iesys_compute_session_value, check_sess...
+#include "tss2_common.h"     // for TSS2_RC, TSS2_RC_SUCCESS, TSS2_BASE_RC_...
+#include "tss2_esys.h"       // for ESYS_CONTEXT, ESYS_TR, Esys_TestParms
+#include "tss2_sys.h"        // for Tss2_Sys_ExecuteAsync, TSS2L_SYS_AUTH_C...
+#include "tss2_tpm2_types.h" // for TPMT_PUBLIC_PARMS, TPM2_RC_RETRY, TPM2_...
+
 #define LOGMODULE esys
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for return_state_if_error, tss2_is_expected...
 
 /** One-Call function for TPM2_TestParms
  *
@@ -58,17 +60,14 @@
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_TestParms(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR shandle1,
-    ESYS_TR shandle2,
-    ESYS_TR shandle3,
-    const TPMT_PUBLIC_PARMS *parameters)
-{
+Esys_TestParms(ESYS_CONTEXT            *esysContext,
+               ESYS_TR                  shandle1,
+               ESYS_TR                  shandle2,
+               ESYS_TR                  shandle3,
+               const TPMT_PUBLIC_PARMS *parameters) {
     TSS2_RC r;
 
-    r = Esys_TestParms_Async(esysContext, shandle1, shandle2, shandle3,
-                             parameters);
+    r = Esys_TestParms_Async(esysContext, shandle1, shandle2, shandle3, parameters);
     return_if_error(r, "Error in async function");
 
     /* Set the timeout to indefinite for now, since we want _Finish to block */
@@ -85,16 +84,17 @@ Esys_TestParms(
         r = Esys_TestParms_Finish(esysContext);
         /* This is just debug information about the reattempt to finish the
            command */
-        if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN)
-            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32
-                      " => resubmitting command", r);
-    } while ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN);
+        if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN)
+            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32 " => resubmitting command", r);
+    } while (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN);
 
     /* Restore the timeout value to the original value */
     esysContext->timeout = timeouttmp;
-    return_if_error(r, "Esys Finish");
+    if (!tss2_is_expected_error(r)) {
+        return_if_error(r, "Esys Finish");
+    }
 
-    return TSS2_RC_SUCCESS;
+    return r;
 }
 
 /** Asynchronous function for TPM2_TestParms
@@ -129,16 +129,13 @@ Esys_TestParms(
  *          of the first response parameter.
  */
 TSS2_RC
-Esys_TestParms_Async(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR shandle1,
-    ESYS_TR shandle2,
-    ESYS_TR shandle3,
-    const TPMT_PUBLIC_PARMS *parameters)
-{
+Esys_TestParms_Async(ESYS_CONTEXT            *esysContext,
+                     ESYS_TR                  shandle1,
+                     ESYS_TR                  shandle2,
+                     ESYS_TR                  shandle3,
+                     const TPMT_PUBLIC_PARMS *parameters) {
     TSS2_RC r;
-    LOG_TRACE("context=%p, parameters=%p",
-              esysContext, parameters);
+    LOG_TRACE("context=%p, parameters=%p", esysContext, parameters);
     TSS2L_SYS_AUTH_COMMAND auths;
 
     /* Check context, sequence correctness and set state to error for now */
@@ -149,40 +146,38 @@ Esys_TestParms_Async(
     r = iesys_check_sequence_async(esysContext);
     if (r != TSS2_RC_SUCCESS)
         return r;
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /* Check input parameters */
     r = check_session_feasibility(shandle1, shandle2, shandle3, 0);
-    return_state_if_error(r, _ESYS_STATE_INIT, "Check session usage");
+    return_state_if_error(r, ESYS_STATE_INIT, "Check session usage");
 
     /* Initial invocation of SAPI to prepare the command buffer with parameters */
     r = Tss2_Sys_TestParms_Prepare(esysContext->sys, parameters);
-    return_state_if_error(r, _ESYS_STATE_INIT, "SAPI Prepare returned error.");
+    return_state_if_error(r, ESYS_STATE_INIT, "SAPI Prepare returned error.");
 
     /* Calculate the cpHash Values */
     r = init_session_tab(esysContext, shandle1, shandle2, shandle3);
-    return_state_if_error(r, _ESYS_STATE_INIT, "Initialize session resources");
+    return_state_if_error(r, ESYS_STATE_INIT, "Initialize session resources");
     iesys_compute_session_value(esysContext->session_tab[0], NULL, NULL);
     iesys_compute_session_value(esysContext->session_tab[1], NULL, NULL);
     iesys_compute_session_value(esysContext->session_tab[2], NULL, NULL);
 
     /* Generate the auth values and set them in the SAPI command buffer */
     r = iesys_gen_auths(esysContext, NULL, NULL, NULL, &auths);
-    return_state_if_error(r, _ESYS_STATE_INIT,
-                          "Error in computation of auth values");
+    return_state_if_error(r, ESYS_STATE_INIT, "Error in computation of auth values");
 
     esysContext->authsCount = auths.count;
     if (auths.count > 0) {
         r = Tss2_Sys_SetCmdAuths(esysContext->sys, &auths);
-        return_state_if_error(r, _ESYS_STATE_INIT, "SAPI error on SetCmdAuths");
+        return_state_if_error(r, ESYS_STATE_INIT, "SAPI error on SetCmdAuths");
     }
 
     /* Trigger execution and finish the async invocation */
     r = Tss2_Sys_ExecuteAsync(esysContext->sys);
-    return_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                          "Finish (Execute Async)");
+    return_state_if_error(r, ESYS_STATE_INTERNALERROR, "Finish (Execute Async)");
 
-    esysContext->state = _ESYS_STATE_SENT;
+    esysContext->state = ESYS_STATE_SENT;
 
     return r;
 }
@@ -215,12 +210,9 @@ Esys_TestParms_Async(
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_TestParms_Finish(
-    ESYS_CONTEXT *esysContext)
-{
+Esys_TestParms_Finish(ESYS_CONTEXT *esysContext) {
     TSS2_RC r;
-    LOG_TRACE("context=%p",
-              esysContext);
+    LOG_TRACE("context=%p", esysContext);
 
     if (esysContext == NULL) {
         LOG_ERROR("esyscontext is NULL.");
@@ -228,31 +220,31 @@ Esys_TestParms_Finish(
     }
 
     /* Check for correct sequence and set sequence to irregular for now */
-    if (esysContext->state != _ESYS_STATE_SENT &&
-        esysContext->state != _ESYS_STATE_RESUBMISSION) {
+    if (esysContext->state != ESYS_STATE_SENT && esysContext->state != ESYS_STATE_RESUBMISSION) {
         LOG_ERROR("Esys called in bad sequence.");
         return TSS2_ESYS_RC_BAD_SEQUENCE;
     }
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /*Receive the TPM response and handle resubmissions if necessary. */
     r = Tss2_Sys_ExecuteFinish(esysContext->sys, esysContext->timeout);
-    if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN) {
+    if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN) {
         LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32, r);
-        esysContext->state = _ESYS_STATE_SENT;
+        esysContext->state = ESYS_STATE_SENT;
         return r;
     }
     /* This block handle the resubmission of TPM commands given a certain set of
      * TPM response codes. */
     if (r == TPM2_RC_RETRY || r == TPM2_RC_TESTING || r == TPM2_RC_YIELDED) {
         LOG_DEBUG("TPM returned RETRY, TESTING or YIELDED, which triggers a "
-            "resubmission: %" PRIx32, r);
-        if (esysContext->submissionCount++ >= _ESYS_MAX_SUBMISSIONS) {
+                  "resubmission: %" PRIx32,
+                  r);
+        if (esysContext->submissionCount++ >= ESYS_MAX_SUBMISSIONS) {
             LOG_WARNING("Maximum number of (re)submissions has been reached.");
-            esysContext->state = _ESYS_STATE_INIT;
+            esysContext->state = ESYS_STATE_INIT;
             return r;
         }
-        esysContext->state = _ESYS_STATE_RESUBMISSION;
+        esysContext->state = ESYS_STATE_RESUBMISSION;
         r = Tss2_Sys_ExecuteAsync(esysContext->sys);
         if (r != TSS2_RC_SUCCESS) {
             LOG_WARNING("Error attempting to resubmit");
@@ -266,12 +258,14 @@ Esys_TestParms_Finish(
     }
     /* The following is the "regular error" handling. */
     if (iesys_tpm_error(r)) {
-        LOG_WARNING("Received TPM Error");
-        esysContext->state = _ESYS_STATE_INIT;
+        if (!tss2_is_expected_error(r)) {
+            LOG_WARNING("Received TPM Error");
+        }
+        esysContext->state = ESYS_STATE_INIT;
         return r;
     } else if (r != TSS2_RC_SUCCESS) {
         LOG_ERROR("Received a non-TPM Error");
-        esysContext->state = _ESYS_STATE_INTERNALERROR;
+        esysContext->state = ESYS_STATE_INTERNALERROR;
         return r;
     }
 
@@ -280,18 +274,16 @@ Esys_TestParms_Finish(
      * parameter decryption have to be done.
      */
     r = iesys_check_response(esysContext);
-    return_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                          "Error: check response");
+    return_state_if_error(r, ESYS_STATE_INTERNALERROR, "Error: check response");
 
     /*
      * After the verification of the response we call the complete function
      * to deliver the result.
      */
     r = Tss2_Sys_TestParms_Complete(esysContext->sys);
-    return_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                          "Received error from SAPI unmarshaling" );
+    return_state_if_error(r, ESYS_STATE_INTERNALERROR, "Received error from SAPI unmarshaling");
 
-    esysContext->state = _ESYS_STATE_INIT;
+    esysContext->state = ESYS_STATE_INIT;
 
     return TSS2_RC_SUCCESS;
 }

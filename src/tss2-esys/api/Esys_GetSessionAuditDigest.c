@@ -5,19 +5,22 @@
  ******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include "tss2_mu.h"
-#include "tss2_sys.h"
-#include "tss2_esys.h"
+#include <inttypes.h> // for PRIx32, int32_t
+#include <stdlib.h>   // for NULL, calloc
 
-#include "esys_types.h"
-#include "esys_iutil.h"
-#include "esys_mu.h"
+#include "esys_int.h"        // for ESYS_CONTEXT, RSRC_NODE_T, _ESYS_STATE_...
+#include "esys_iutil.h"      // for iesys_compute_session_value, esys_GetRe...
+#include "esys_types.h"      // for IESYS_RESOURCE
+#include "tss2_common.h"     // for TSS2_RC, TSS2_RC_SUCCESS, TSS2_BASE_RC_...
+#include "tss2_esys.h"       // for ESYS_CONTEXT, ESYS_TR, Esys_GetSessionA...
+#include "tss2_sys.h"        // for Tss2_Sys_ExecuteAsync, TSS2L_SYS_AUTH_C...
+#include "tss2_tpm2_types.h" // for TPM2B_ATTEST, TPM2_RH_NULL, TPMT_SIGNATURE
+
 #define LOGMODULE esys
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for return_state_if_error, LOG_DEBUG, LOG_E...
 
 /** One-Call function for TPM2_GetSessionAuditDigest
  *
@@ -66,25 +69,21 @@
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_GetSessionAuditDigest(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR privacyAdminHandle,
-    ESYS_TR signHandle,
-    ESYS_TR sessionHandle,
-    ESYS_TR shandle1,
-    ESYS_TR shandle2,
-    ESYS_TR shandle3,
-    const TPM2B_DATA *qualifyingData,
-    const TPMT_SIG_SCHEME *inScheme,
-    TPM2B_ATTEST **auditInfo,
-    TPMT_SIGNATURE **signature)
-{
+Esys_GetSessionAuditDigest(ESYS_CONTEXT          *esysContext,
+                           ESYS_TR                privacyAdminHandle,
+                           ESYS_TR                signHandle,
+                           ESYS_TR                sessionHandle,
+                           ESYS_TR                shandle1,
+                           ESYS_TR                shandle2,
+                           ESYS_TR                shandle3,
+                           const TPM2B_DATA      *qualifyingData,
+                           const TPMT_SIG_SCHEME *inScheme,
+                           TPM2B_ATTEST         **auditInfo,
+                           TPMT_SIGNATURE       **signature) {
     TSS2_RC r;
 
-    r = Esys_GetSessionAuditDigest_Async(esysContext, privacyAdminHandle,
-                                         signHandle, sessionHandle, shandle1,
-                                         shandle2, shandle3, qualifyingData,
-                                         inScheme);
+    r = Esys_GetSessionAuditDigest_Async(esysContext, privacyAdminHandle, signHandle, sessionHandle,
+                                         shandle1, shandle2, shandle3, qualifyingData, inScheme);
     return_if_error(r, "Error in async function");
 
     /* Set the timeout to indefinite for now, since we want _Finish to block */
@@ -98,14 +97,12 @@ Esys_GetSessionAuditDigest(
      * a retransmission of the command via TPM2_RC_YIELDED.
      */
     do {
-        r = Esys_GetSessionAuditDigest_Finish(esysContext, auditInfo,
-                                              signature);
+        r = Esys_GetSessionAuditDigest_Finish(esysContext, auditInfo, signature);
         /* This is just debug information about the reattempt to finish the
            command */
-        if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN)
-            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32
-                      " => resubmitting command", r);
-    } while ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN);
+        if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN)
+            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32 " => resubmitting command", r);
+    } while (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN);
 
     /* Restore the timeout value to the original value */
     esysContext->timeout = timeouttmp;
@@ -150,26 +147,23 @@ Esys_GetSessionAuditDigest(
  *         ESYS_TR objects are ESYS_TR_NONE.
  */
 TSS2_RC
-Esys_GetSessionAuditDigest_Async(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR privacyAdminHandle,
-    ESYS_TR signHandle,
-    ESYS_TR sessionHandle,
-    ESYS_TR shandle1,
-    ESYS_TR shandle2,
-    ESYS_TR shandle3,
-    const TPM2B_DATA *qualifyingData,
-    const TPMT_SIG_SCHEME *inScheme)
-{
+Esys_GetSessionAuditDigest_Async(ESYS_CONTEXT          *esysContext,
+                                 ESYS_TR                privacyAdminHandle,
+                                 ESYS_TR                signHandle,
+                                 ESYS_TR                sessionHandle,
+                                 ESYS_TR                shandle1,
+                                 ESYS_TR                shandle2,
+                                 ESYS_TR                shandle3,
+                                 const TPM2B_DATA      *qualifyingData,
+                                 const TPMT_SIG_SCHEME *inScheme) {
     TSS2_RC r;
-    LOG_TRACE("context=%p, privacyAdminHandle=%"PRIx32 ", signHandle=%"PRIx32 ","
-              "sessionHandle=%"PRIx32 ", qualifyingData=%p, inScheme=%p",
-              esysContext, privacyAdminHandle, signHandle, sessionHandle, qualifyingData,
-              inScheme);
+    LOG_TRACE("context=%p, privacyAdminHandle=%" PRIx32 ", signHandle=%" PRIx32 ","
+              "sessionHandle=%" PRIx32 ", qualifyingData=%p, inScheme=%p",
+              esysContext, privacyAdminHandle, signHandle, sessionHandle, qualifyingData, inScheme);
     TSS2L_SYS_AUTH_COMMAND auths;
-    RSRC_NODE_T *privacyAdminHandleNode;
-    RSRC_NODE_T *signHandleNode;
-    RSRC_NODE_T *sessionHandleNode;
+    RSRC_NODE_T           *privacyAdminHandleNode;
+    RSRC_NODE_T           *signHandleNode;
+    RSRC_NODE_T           *sessionHandleNode;
 
     /* Check context, sequence correctness and set state to error for now */
     if (esysContext == NULL) {
@@ -179,60 +173,58 @@ Esys_GetSessionAuditDigest_Async(
     r = iesys_check_sequence_async(esysContext);
     if (r != TSS2_RC_SUCCESS)
         return r;
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /* Check input parameters */
     r = check_session_feasibility(shandle1, shandle2, shandle3, 1);
-    return_state_if_error(r, _ESYS_STATE_INIT, "Check session usage");
+    return_state_if_error(r, ESYS_STATE_INIT, "Check session usage");
 
     /* Retrieve the metadata objects for provided handles */
     r = esys_GetResourceObject(esysContext, privacyAdminHandle, &privacyAdminHandleNode);
-    return_state_if_error(r, _ESYS_STATE_INIT, "privacyAdminHandle unknown.");
+    return_state_if_error(r, ESYS_STATE_INIT, "privacyAdminHandle unknown.");
     r = esys_GetResourceObject(esysContext, signHandle, &signHandleNode);
-    return_state_if_error(r, _ESYS_STATE_INIT, "signHandle unknown.");
+    return_state_if_error(r, ESYS_STATE_INIT, "signHandle unknown.");
     r = esys_GetResourceObject(esysContext, sessionHandle, &sessionHandleNode);
-    return_state_if_error(r, _ESYS_STATE_INIT, "sessionHandle unknown.");
+    return_state_if_error(r, ESYS_STATE_INIT, "sessionHandle unknown.");
 
     /* Initial invocation of SAPI to prepare the command buffer with parameters */
-    r = Tss2_Sys_GetSessionAuditDigest_Prepare(esysContext->sys,
-                                               (privacyAdminHandleNode == NULL)
-                                                ? TPM2_RH_NULL
-                                                : privacyAdminHandleNode->rsrc.handle,
-                                               (signHandleNode == NULL)
-                                                ? TPM2_RH_NULL
-                                                : signHandleNode->rsrc.handle,
-                                               (sessionHandleNode == NULL)
-                                                ? TPM2_RH_NULL
-                                                : sessionHandleNode->rsrc.handle,
-                                               qualifyingData, inScheme);
-    return_state_if_error(r, _ESYS_STATE_INIT, "SAPI Prepare returned error.");
+    r = Tss2_Sys_GetSessionAuditDigest_Prepare(
+        esysContext->sys,
+        (privacyAdminHandleNode == NULL) ? TPM2_RH_NULL : privacyAdminHandleNode->rsrc.handle,
+        (signHandleNode == NULL) ? TPM2_RH_NULL : signHandleNode->rsrc.handle,
+        (sessionHandleNode == NULL) ? TPM2_RH_NULL : sessionHandleNode->rsrc.handle, qualifyingData,
+        inScheme);
+    return_state_if_error(r, ESYS_STATE_INIT, "SAPI Prepare returned error.");
 
     /* Calculate the cpHash Values */
     r = init_session_tab(esysContext, shandle1, shandle2, shandle3);
-    return_state_if_error(r, _ESYS_STATE_INIT, "Initialize session resources");
-    iesys_compute_session_value(esysContext->session_tab[0],
-                &privacyAdminHandleNode->rsrc.name, &privacyAdminHandleNode->auth);
-    iesys_compute_session_value(esysContext->session_tab[1],
-                &signHandleNode->rsrc.name, &signHandleNode->auth);
+    return_state_if_error(r, ESYS_STATE_INIT, "Initialize session resources");
+    if (privacyAdminHandleNode != NULL)
+        iesys_compute_session_value(esysContext->session_tab[0], &privacyAdminHandleNode->rsrc.name,
+                                    &privacyAdminHandleNode->auth);
+    else
+        iesys_compute_session_value(esysContext->session_tab[0], NULL, NULL);
+
+    iesys_compute_session_value(esysContext->session_tab[1], &signHandleNode->rsrc.name,
+                                &signHandleNode->auth);
     iesys_compute_session_value(esysContext->session_tab[2], NULL, NULL);
 
     /* Generate the auth values and set them in the SAPI command buffer */
-    r = iesys_gen_auths(esysContext, privacyAdminHandleNode, signHandleNode, sessionHandleNode, &auths);
-    return_state_if_error(r, _ESYS_STATE_INIT,
-                          "Error in computation of auth values");
+    r = iesys_gen_auths(esysContext, privacyAdminHandleNode, signHandleNode, sessionHandleNode,
+                        &auths);
+    return_state_if_error(r, ESYS_STATE_INIT, "Error in computation of auth values");
 
     esysContext->authsCount = auths.count;
     if (auths.count > 0) {
         r = Tss2_Sys_SetCmdAuths(esysContext->sys, &auths);
-        return_state_if_error(r, _ESYS_STATE_INIT, "SAPI error on SetCmdAuths");
+        return_state_if_error(r, ESYS_STATE_INIT, "SAPI error on SetCmdAuths");
     }
 
     /* Trigger execution and finish the async invocation */
     r = Tss2_Sys_ExecuteAsync(esysContext->sys);
-    return_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                          "Finish (Execute Async)");
+    return_state_if_error(r, ESYS_STATE_INTERNALERROR, "Finish (Execute Async)");
 
-    esysContext->state = _ESYS_STATE_SENT;
+    esysContext->state = ESYS_STATE_SENT;
 
     return r;
 }
@@ -269,14 +261,11 @@ Esys_GetSessionAuditDigest_Async(
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_GetSessionAuditDigest_Finish(
-    ESYS_CONTEXT *esysContext,
-    TPM2B_ATTEST **auditInfo,
-    TPMT_SIGNATURE **signature)
-{
+Esys_GetSessionAuditDigest_Finish(ESYS_CONTEXT    *esysContext,
+                                  TPM2B_ATTEST   **auditInfo,
+                                  TPMT_SIGNATURE **signature) {
     TSS2_RC r;
-    LOG_TRACE("context=%p, auditInfo=%p, signature=%p",
-              esysContext, auditInfo, signature);
+    LOG_TRACE("context=%p, auditInfo=%p, signature=%p", esysContext, auditInfo, signature);
 
     if (esysContext == NULL) {
         LOG_ERROR("esyscontext is NULL.");
@@ -284,22 +273,21 @@ Esys_GetSessionAuditDigest_Finish(
     }
 
     /* Check for correct sequence and set sequence to irregular for now */
-    if (esysContext->state != _ESYS_STATE_SENT &&
-        esysContext->state != _ESYS_STATE_RESUBMISSION) {
+    if (esysContext->state != ESYS_STATE_SENT && esysContext->state != ESYS_STATE_RESUBMISSION) {
         LOG_ERROR("Esys called in bad sequence.");
         return TSS2_ESYS_RC_BAD_SEQUENCE;
     }
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /* Allocate memory for response parameters */
     if (auditInfo != NULL) {
-        *auditInfo = calloc(sizeof(TPM2B_ATTEST), 1);
+        *auditInfo = calloc(1, sizeof(TPM2B_ATTEST));
         if (*auditInfo == NULL) {
             return_error(TSS2_ESYS_RC_MEMORY, "Out of memory");
         }
     }
     if (signature != NULL) {
-        *signature = calloc(sizeof(TPMT_SIGNATURE), 1);
+        *signature = calloc(1, sizeof(TPMT_SIGNATURE));
         if (*signature == NULL) {
             goto_error(r, TSS2_ESYS_RC_MEMORY, "Out of memory", error_cleanup);
         }
@@ -307,22 +295,23 @@ Esys_GetSessionAuditDigest_Finish(
 
     /*Receive the TPM response and handle resubmissions if necessary. */
     r = Tss2_Sys_ExecuteFinish(esysContext->sys, esysContext->timeout);
-    if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN) {
+    if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN) {
         LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32, r);
-        esysContext->state = _ESYS_STATE_SENT;
+        esysContext->state = ESYS_STATE_SENT;
         goto error_cleanup;
     }
     /* This block handle the resubmission of TPM commands given a certain set of
      * TPM response codes. */
     if (r == TPM2_RC_RETRY || r == TPM2_RC_TESTING || r == TPM2_RC_YIELDED) {
         LOG_DEBUG("TPM returned RETRY, TESTING or YIELDED, which triggers a "
-            "resubmission: %" PRIx32, r);
-        if (esysContext->submissionCount++ >= _ESYS_MAX_SUBMISSIONS) {
+                  "resubmission: %" PRIx32,
+                  r);
+        if (esysContext->submissionCount++ >= ESYS_MAX_SUBMISSIONS) {
             LOG_WARNING("Maximum number of (re)submissions has been reached.");
-            esysContext->state = _ESYS_STATE_INIT;
+            esysContext->state = ESYS_STATE_INIT;
             goto error_cleanup;
         }
-        esysContext->state = _ESYS_STATE_RESUBMISSION;
+        esysContext->state = ESYS_STATE_RESUBMISSION;
         r = Tss2_Sys_ExecuteAsync(esysContext->sys);
         if (r != TSS2_RC_SUCCESS) {
             LOG_WARNING("Error attempting to resubmit");
@@ -337,11 +326,11 @@ Esys_GetSessionAuditDigest_Finish(
     /* The following is the "regular error" handling. */
     if (iesys_tpm_error(r)) {
         LOG_WARNING("Received TPM Error");
-        esysContext->state = _ESYS_STATE_INIT;
+        esysContext->state = ESYS_STATE_INIT;
         goto error_cleanup;
     } else if (r != TSS2_RC_SUCCESS) {
         LOG_ERROR("Received a non-TPM Error");
-        esysContext->state = _ESYS_STATE_INTERNALERROR;
+        esysContext->state = ESYS_STATE_INTERNALERROR;
         goto error_cleanup;
     }
 
@@ -350,23 +339,19 @@ Esys_GetSessionAuditDigest_Finish(
      * parameter decryption have to be done.
      */
     r = iesys_check_response(esysContext);
-    goto_state_if_error(r, _ESYS_STATE_INTERNALERROR, "Error: check response",
-                        error_cleanup);
+    goto_state_if_error(r, ESYS_STATE_INTERNALERROR, "Error: check response", error_cleanup);
 
     /*
      * After the verification of the response we call the complete function
      * to deliver the result.
      */
     r = Tss2_Sys_GetSessionAuditDigest_Complete(esysContext->sys,
-                                                (auditInfo != NULL) ? *auditInfo
-                                                 : NULL,
-                                                (signature != NULL) ? *signature
-                                                 : NULL);
-    goto_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                        "Received error from SAPI unmarshaling" ,
+                                                (auditInfo != NULL) ? *auditInfo : NULL,
+                                                (signature != NULL) ? *signature : NULL);
+    goto_state_if_error(r, ESYS_STATE_INTERNALERROR, "Received error from SAPI unmarshaling",
                         error_cleanup);
 
-    esysContext->state = _ESYS_STATE_INIT;
+    esysContext->state = ESYS_STATE_INIT;
 
     return TSS2_RC_SUCCESS;
 

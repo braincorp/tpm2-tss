@@ -5,19 +5,22 @@
  ******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include "tss2_mu.h"
-#include "tss2_sys.h"
-#include "tss2_esys.h"
+#include <inttypes.h> // for PRIx32, PRIx16, int32_t
+#include <stdlib.h>   // for NULL, calloc
 
-#include "esys_types.h"
-#include "esys_iutil.h"
-#include "esys_mu.h"
+#include "esys_int.h"        // for ESYS_CONTEXT, _ESYS_STATE_INIT, RSRC_NO...
+#include "esys_iutil.h"      // for iesys_compute_session_value, check_sess...
+#include "esys_types.h"      // for IESYS_RESOURCE
+#include "tss2_common.h"     // for TSS2_RC, TSS2_RC_SUCCESS, TSS2_BASE_RC_...
+#include "tss2_esys.h"       // for ESYS_CONTEXT, ESYS_TR, Esys_ZGen_2Phase
+#include "tss2_sys.h"        // for Tss2_Sys_ExecuteAsync, TSS2L_SYS_AUTH_C...
+#include "tss2_tpm2_types.h" // for TPM2B_ECC_POINT, TPMI_ECC_KEY_EXCHANGE
+
 #define LOGMODULE esys
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for return_state_if_error, LOG_DEBUG, LOG_E...
 
 /** One-Call function for TPM2_ZGen_2Phase
  *
@@ -65,23 +68,21 @@
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_ZGen_2Phase(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR keyA,
-    ESYS_TR shandle1,
-    ESYS_TR shandle2,
-    ESYS_TR shandle3,
-    const TPM2B_ECC_POINT *inQsB,
-    const TPM2B_ECC_POINT *inQeB,
-    TPMI_ECC_KEY_EXCHANGE inScheme,
-    UINT16 counter,
-    TPM2B_ECC_POINT **outZ1,
-    TPM2B_ECC_POINT **outZ2)
-{
+Esys_ZGen_2Phase(ESYS_CONTEXT          *esysContext,
+                 ESYS_TR                keyA,
+                 ESYS_TR                shandle1,
+                 ESYS_TR                shandle2,
+                 ESYS_TR                shandle3,
+                 const TPM2B_ECC_POINT *inQsB,
+                 const TPM2B_ECC_POINT *inQeB,
+                 TPMI_ECC_KEY_EXCHANGE  inScheme,
+                 UINT16                 counter,
+                 TPM2B_ECC_POINT      **outZ1,
+                 TPM2B_ECC_POINT      **outZ2) {
     TSS2_RC r;
 
-    r = Esys_ZGen_2Phase_Async(esysContext, keyA, shandle1, shandle2, shandle3,
-                               inQsB, inQeB, inScheme, counter);
+    r = Esys_ZGen_2Phase_Async(esysContext, keyA, shandle1, shandle2, shandle3, inQsB, inQeB,
+                               inScheme, counter);
     return_if_error(r, "Error in async function");
 
     /* Set the timeout to indefinite for now, since we want _Finish to block */
@@ -98,10 +99,9 @@ Esys_ZGen_2Phase(
         r = Esys_ZGen_2Phase_Finish(esysContext, outZ1, outZ2);
         /* This is just debug information about the reattempt to finish the
            command */
-        if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN)
-            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32
-                      " => resubmitting command", r);
-    } while ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN);
+        if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN)
+            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32 " => resubmitting command", r);
+    } while (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN);
 
     /* Restore the timeout value to the original value */
     esysContext->timeout = timeouttmp;
@@ -143,24 +143,21 @@ Esys_ZGen_2Phase(
  *         ESYS_TR objects are ESYS_TR_NONE.
  */
 TSS2_RC
-Esys_ZGen_2Phase_Async(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR keyA,
-    ESYS_TR shandle1,
-    ESYS_TR shandle2,
-    ESYS_TR shandle3,
-    const TPM2B_ECC_POINT *inQsB,
-    const TPM2B_ECC_POINT *inQeB,
-    TPMI_ECC_KEY_EXCHANGE inScheme,
-    UINT16 counter)
-{
+Esys_ZGen_2Phase_Async(ESYS_CONTEXT          *esysContext,
+                       ESYS_TR                keyA,
+                       ESYS_TR                shandle1,
+                       ESYS_TR                shandle2,
+                       ESYS_TR                shandle3,
+                       const TPM2B_ECC_POINT *inQsB,
+                       const TPM2B_ECC_POINT *inQeB,
+                       TPMI_ECC_KEY_EXCHANGE  inScheme,
+                       UINT16                 counter) {
     TSS2_RC r;
-    LOG_TRACE("context=%p, keyA=%"PRIx32 ", inQsB=%p,"
-              "inQeB=%p, inScheme=%04"PRIx16", counter=%04"PRIx16"",
-              esysContext, keyA, inQsB, inQeB, inScheme,
-              counter);
+    LOG_TRACE("context=%p, keyA=%" PRIx32 ", inQsB=%p,"
+              "inQeB=%p, inScheme=%04" PRIx16 ", counter=%04" PRIx16 "",
+              esysContext, keyA, inQsB, inQeB, inScheme, counter);
     TSS2L_SYS_AUTH_COMMAND auths;
-    RSRC_NODE_T *keyANode;
+    RSRC_NODE_T           *keyANode;
 
     /* Check context, sequence correctness and set state to error for now */
     if (esysContext == NULL) {
@@ -170,48 +167,49 @@ Esys_ZGen_2Phase_Async(
     r = iesys_check_sequence_async(esysContext);
     if (r != TSS2_RC_SUCCESS)
         return r;
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /* Check input parameters */
     r = check_session_feasibility(shandle1, shandle2, shandle3, 1);
-    return_state_if_error(r, _ESYS_STATE_INIT, "Check session usage");
+    return_state_if_error(r, ESYS_STATE_INIT, "Check session usage");
 
     /* Retrieve the metadata objects for provided handles */
     r = esys_GetResourceObject(esysContext, keyA, &keyANode);
-    return_state_if_error(r, _ESYS_STATE_INIT, "keyA unknown.");
+    return_state_if_error(r, ESYS_STATE_INIT, "keyA unknown.");
 
     /* Initial invocation of SAPI to prepare the command buffer with parameters */
     r = Tss2_Sys_ZGen_2Phase_Prepare(esysContext->sys,
-                                     (keyANode == NULL) ? TPM2_RH_NULL
-                                      : keyANode->rsrc.handle, inQsB, inQeB,
-                                     inScheme, counter);
-    return_state_if_error(r, _ESYS_STATE_INIT, "SAPI Prepare returned error.");
+                                     (keyANode == NULL) ? TPM2_RH_NULL : keyANode->rsrc.handle,
+                                     inQsB, inQeB, inScheme, counter);
+    return_state_if_error(r, ESYS_STATE_INIT, "SAPI Prepare returned error.");
 
     /* Calculate the cpHash Values */
     r = init_session_tab(esysContext, shandle1, shandle2, shandle3);
-    return_state_if_error(r, _ESYS_STATE_INIT, "Initialize session resources");
-    iesys_compute_session_value(esysContext->session_tab[0],
-                &keyANode->rsrc.name, &keyANode->auth);
+    return_state_if_error(r, ESYS_STATE_INIT, "Initialize session resources");
+    if (keyANode != NULL)
+        iesys_compute_session_value(esysContext->session_tab[0], &keyANode->rsrc.name,
+                                    &keyANode->auth);
+    else
+        iesys_compute_session_value(esysContext->session_tab[0], NULL, NULL);
+
     iesys_compute_session_value(esysContext->session_tab[1], NULL, NULL);
     iesys_compute_session_value(esysContext->session_tab[2], NULL, NULL);
 
     /* Generate the auth values and set them in the SAPI command buffer */
     r = iesys_gen_auths(esysContext, keyANode, NULL, NULL, &auths);
-    return_state_if_error(r, _ESYS_STATE_INIT,
-                          "Error in computation of auth values");
+    return_state_if_error(r, ESYS_STATE_INIT, "Error in computation of auth values");
 
     esysContext->authsCount = auths.count;
     if (auths.count > 0) {
         r = Tss2_Sys_SetCmdAuths(esysContext->sys, &auths);
-        return_state_if_error(r, _ESYS_STATE_INIT, "SAPI error on SetCmdAuths");
+        return_state_if_error(r, ESYS_STATE_INIT, "SAPI error on SetCmdAuths");
     }
 
     /* Trigger execution and finish the async invocation */
     r = Tss2_Sys_ExecuteAsync(esysContext->sys);
-    return_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                          "Finish (Execute Async)");
+    return_state_if_error(r, ESYS_STATE_INTERNALERROR, "Finish (Execute Async)");
 
-    esysContext->state = _ESYS_STATE_SENT;
+    esysContext->state = ESYS_STATE_SENT;
 
     return r;
 }
@@ -250,14 +248,11 @@ Esys_ZGen_2Phase_Async(
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_ZGen_2Phase_Finish(
-    ESYS_CONTEXT *esysContext,
-    TPM2B_ECC_POINT **outZ1,
-    TPM2B_ECC_POINT **outZ2)
-{
+Esys_ZGen_2Phase_Finish(ESYS_CONTEXT     *esysContext,
+                        TPM2B_ECC_POINT **outZ1,
+                        TPM2B_ECC_POINT **outZ2) {
     TSS2_RC r;
-    LOG_TRACE("context=%p, outZ1=%p, outZ2=%p",
-              esysContext, outZ1, outZ2);
+    LOG_TRACE("context=%p, outZ1=%p, outZ2=%p", esysContext, outZ1, outZ2);
 
     if (esysContext == NULL) {
         LOG_ERROR("esyscontext is NULL.");
@@ -265,22 +260,21 @@ Esys_ZGen_2Phase_Finish(
     }
 
     /* Check for correct sequence and set sequence to irregular for now */
-    if (esysContext->state != _ESYS_STATE_SENT &&
-        esysContext->state != _ESYS_STATE_RESUBMISSION) {
+    if (esysContext->state != ESYS_STATE_SENT && esysContext->state != ESYS_STATE_RESUBMISSION) {
         LOG_ERROR("Esys called in bad sequence.");
         return TSS2_ESYS_RC_BAD_SEQUENCE;
     }
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /* Allocate memory for response parameters */
     if (outZ1 != NULL) {
-        *outZ1 = calloc(sizeof(TPM2B_ECC_POINT), 1);
+        *outZ1 = calloc(1, sizeof(TPM2B_ECC_POINT));
         if (*outZ1 == NULL) {
             return_error(TSS2_ESYS_RC_MEMORY, "Out of memory");
         }
     }
     if (outZ2 != NULL) {
-        *outZ2 = calloc(sizeof(TPM2B_ECC_POINT), 1);
+        *outZ2 = calloc(1, sizeof(TPM2B_ECC_POINT));
         if (*outZ2 == NULL) {
             goto_error(r, TSS2_ESYS_RC_MEMORY, "Out of memory", error_cleanup);
         }
@@ -288,22 +282,23 @@ Esys_ZGen_2Phase_Finish(
 
     /*Receive the TPM response and handle resubmissions if necessary. */
     r = Tss2_Sys_ExecuteFinish(esysContext->sys, esysContext->timeout);
-    if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN) {
+    if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN) {
         LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32, r);
-        esysContext->state = _ESYS_STATE_SENT;
+        esysContext->state = ESYS_STATE_SENT;
         goto error_cleanup;
     }
     /* This block handle the resubmission of TPM commands given a certain set of
      * TPM response codes. */
     if (r == TPM2_RC_RETRY || r == TPM2_RC_TESTING || r == TPM2_RC_YIELDED) {
         LOG_DEBUG("TPM returned RETRY, TESTING or YIELDED, which triggers a "
-            "resubmission: %" PRIx32, r);
-        if (esysContext->submissionCount++ >= _ESYS_MAX_SUBMISSIONS) {
+                  "resubmission: %" PRIx32,
+                  r);
+        if (esysContext->submissionCount++ >= ESYS_MAX_SUBMISSIONS) {
             LOG_WARNING("Maximum number of (re)submissions has been reached.");
-            esysContext->state = _ESYS_STATE_INIT;
+            esysContext->state = ESYS_STATE_INIT;
             goto error_cleanup;
         }
-        esysContext->state = _ESYS_STATE_RESUBMISSION;
+        esysContext->state = ESYS_STATE_RESUBMISSION;
         r = Tss2_Sys_ExecuteAsync(esysContext->sys);
         if (r != TSS2_RC_SUCCESS) {
             LOG_WARNING("Error attempting to resubmit");
@@ -318,11 +313,11 @@ Esys_ZGen_2Phase_Finish(
     /* The following is the "regular error" handling. */
     if (iesys_tpm_error(r)) {
         LOG_WARNING("Received TPM Error");
-        esysContext->state = _ESYS_STATE_INIT;
+        esysContext->state = ESYS_STATE_INIT;
         goto error_cleanup;
     } else if (r != TSS2_RC_SUCCESS) {
         LOG_ERROR("Received a non-TPM Error");
-        esysContext->state = _ESYS_STATE_INTERNALERROR;
+        esysContext->state = ESYS_STATE_INTERNALERROR;
         goto error_cleanup;
     }
 
@@ -331,21 +326,18 @@ Esys_ZGen_2Phase_Finish(
      * parameter decryption have to be done.
      */
     r = iesys_check_response(esysContext);
-    goto_state_if_error(r, _ESYS_STATE_INTERNALERROR, "Error: check response",
-                        error_cleanup);
+    goto_state_if_error(r, ESYS_STATE_INTERNALERROR, "Error: check response", error_cleanup);
 
     /*
      * After the verification of the response we call the complete function
      * to deliver the result.
      */
-    r = Tss2_Sys_ZGen_2Phase_Complete(esysContext->sys,
-                                      (outZ1 != NULL) ? *outZ1 : NULL,
+    r = Tss2_Sys_ZGen_2Phase_Complete(esysContext->sys, (outZ1 != NULL) ? *outZ1 : NULL,
                                       (outZ2 != NULL) ? *outZ2 : NULL);
-    goto_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                        "Received error from SAPI unmarshaling" ,
+    goto_state_if_error(r, ESYS_STATE_INTERNALERROR, "Received error from SAPI unmarshaling",
                         error_cleanup);
 
-    esysContext->state = _ESYS_STATE_INIT;
+    esysContext->state = ESYS_STATE_INIT;
 
     return TSS2_RC_SUCCESS;
 

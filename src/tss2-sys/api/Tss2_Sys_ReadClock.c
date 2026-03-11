@@ -1,22 +1,23 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /***********************************************************************;
- * Copyright (c) 2015 - 2017, Intel Corporation
+ * Copyright (c) 2015 - 2020, Intel Corporation
  * All rights reserved.
  ***********************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include "tss2_tpm2_types.h"
-#include "tss2_mu.h"
-#include "sysapi_util.h"
+#include "sysapi_util.h"     // for _TSS2_SYS_CONTEXT_BLOB, syscontext_cast
+#include "tss2_common.h"     // for TSS2_RC, TSS2_SYS_RC_BAD_REFERENCE
+#include "tss2_mu.h"         // for Tss2_MU_TPMS_TIME_INFO_Unmarshal
+#include "tss2_sys.h"        // for TSS2_SYS_CONTEXT, TSS2L_SYS_AUTH_COMMAND
+#include "tss2_tpm2_types.h" // for TPMS_TIME_INFO, TPM2_CC_ReadClock
 
-TSS2_RC Tss2_Sys_ReadClock_Prepare(
-    TSS2_SYS_CONTEXT *sysContext)
-{
-    _TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
-    TSS2_RC rval;
+TSS2_RC
+Tss2_Sys_ReadClock_Prepare(TSS2_SYS_CONTEXT *sysContext) {
+    TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
+    TSS2_RC                rval;
 
     if (!ctx)
         return TSS2_SYS_RC_BAD_REFERENCE;
@@ -27,17 +28,15 @@ TSS2_RC Tss2_Sys_ReadClock_Prepare(
 
     ctx->decryptAllowed = 0;
     ctx->encryptAllowed = 0;
-    ctx->authAllowed = 0;
+    ctx->authAllowed = 1;
 
     return CommonPrepareEpilogue(ctx);
 }
 
-TSS2_RC Tss2_Sys_ReadClock_Complete(
-    TSS2_SYS_CONTEXT *sysContext,
-    TPMS_TIME_INFO *currentTime)
-{
-    _TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
-    TSS2_RC rval;
+TSS2_RC
+Tss2_Sys_ReadClock_Complete(TSS2_SYS_CONTEXT *sysContext, TPMS_TIME_INFO *currentTime) {
+    TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
+    TSS2_RC                rval;
 
     if (!ctx)
         return TSS2_SYS_RC_BAD_REFERENCE;
@@ -46,24 +45,23 @@ TSS2_RC Tss2_Sys_ReadClock_Complete(
     if (rval)
         return rval;
 
-    return Tss2_MU_TPMS_TIME_INFO_Unmarshal(ctx->cmdBuffer,
-                                            ctx->maxCmdSize,
-                                            &ctx->nextData,
+    return Tss2_MU_TPMS_TIME_INFO_Unmarshal(ctx->cmdBuffer, ctx->maxCmdSize, &ctx->nextData,
                                             currentTime);
 }
 
-TSS2_RC Tss2_Sys_ReadClock(
-    TSS2_SYS_CONTEXT *sysContext,
-    TPMS_TIME_INFO *currentTime)
-{
-    _TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
-    TSS2_RC rval;
+TSS2_RC
+Tss2_Sys_ReadClock(TSS2_SYS_CONTEXT             *sysContext,
+                   TSS2L_SYS_AUTH_COMMAND const *cmdAuthsArray,
+                   TPMS_TIME_INFO               *currentTime,
+                   TSS2L_SYS_AUTH_RESPONSE      *rspAuthsArray) {
+    TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
+    TSS2_RC                rval;
 
     rval = Tss2_Sys_ReadClock_Prepare(sysContext);
     if (rval)
         return rval;
 
-    rval = CommonOneCall(ctx, 0, 0);
+    rval = CommonOneCall(ctx, cmdAuthsArray, rspAuthsArray);
     if (rval)
         return rval;
 

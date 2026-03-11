@@ -1,14 +1,27 @@
 {
     global:
+        Esys_Abort;
+        Esys_AC_GetCapability;
+        Esys_AC_GetCapability_Async;
+        Esys_AC_GetCapability_Finish;
+        Esys_AC_Send;
+        Esys_AC_Send_Async;
+        Esys_AC_Send_Finish;
         Esys_ActivateCredential;
         Esys_ActivateCredential_Async;
         Esys_ActivateCredential_Finish;
+        Esys_ACT_SetTimeout;
+        Esys_ACT_SetTimeout_Async;
+        Esys_ACT_SetTimeout_Finish;
         Esys_Certify;
         Esys_Certify_Async;
         Esys_Certify_Finish;
         Esys_CertifyCreation;
         Esys_CertifyCreation_Async;
         Esys_CertifyCreation_Finish;
+        Esys_CertifyX509;
+        Esys_CertifyX509_Async;
+        Esys_CertifyX509_Finish;
         Esys_ChangeEPS;
         Esys_ChangeEPS_Async;
         Esys_ChangeEPS_Finish;
@@ -97,9 +110,11 @@
         Esys_GetCommandAuditDigest;
         Esys_GetCommandAuditDigest_Async;
         Esys_GetCommandAuditDigest_Finish;
+        Esys_GetCpHash;
         Esys_GetRandom;
         Esys_GetRandom_Async;
         Esys_GetRandom_Finish;
+        Esys_GetRpHash;
         Esys_GetSessionAuditDigest;
         Esys_GetSessionAuditDigest_Async;
         Esys_GetSessionAuditDigest_Finish;
@@ -110,6 +125,7 @@
         Esys_GetTime;
         Esys_GetTime_Async;
         Esys_GetTime_Finish;
+        Esys_GetSysContext;
         Esys_Hash;
         Esys_Hash_Async;
         Esys_Hash_Finish;
@@ -128,6 +144,12 @@
         Esys_HMAC_Start;
         Esys_HMAC_Start_Async;
         Esys_HMAC_Start_Finish;
+        Esys_MAC;
+        Esys_MAC_Async;
+        Esys_MAC_Finish;
+        Esys_MAC_Start;
+        Esys_MAC_Start_Async;
+        Esys_MAC_Start_Finish;
         Esys_Import;
         Esys_Import_Async;
         Esys_Import_Finish;
@@ -209,6 +231,9 @@
         Esys_PCR_SetAuthValue;
         Esys_PCR_SetAuthValue_Async;
         Esys_PCR_SetAuthValue_Finish;
+        Esys_Policy_AC_SendSelect;
+        Esys_Policy_AC_SendSelect_Async;
+        Esys_Policy_AC_SendSelect_Finish;
         Esys_PolicyAuthorize;
         Esys_PolicyAuthorize_Async;
         Esys_PolicyAuthorize_Finish;
@@ -332,6 +357,7 @@
         Esys_TestParms_Finish;
         Esys_TRSess_GetAttributes;
         Esys_TRSess_SetAttributes;
+        Esys_TRSess_GetAuthRequired;
         Esys_TRSess_GetNonceTPM;
         Esys_TR_Close;
         Esys_TR_Deserialize;
@@ -341,6 +367,7 @@
         Esys_TR_GetName;
         Esys_TR_Serialize;
         Esys_TR_SetAuth;
+        Esys_TR_GetTpmHandle;
         Esys_Unseal;
         Esys_Unseal_Async;
         Esys_Unseal_Finish;
@@ -353,9 +380,16 @@
         Esys_ZGen_2Phase;
         Esys_ZGen_2Phase_Async;
         Esys_ZGen_2Phase_Finish;
+        Esys_ECC_Decrypt;
+        Esys_ECC_Decrypt_Async;
+        Esys_ECC_Decrypt_Finish;
+        Esys_ECC_Encrypt;
+        Esys_ECC_Encrypt_Async;
+        Esys_ECC_Encrypt_Finish;
         Esys_Initialize;
         Esys_GetPollHandles;
         Esys_Finalize;
+        Esys_SetCryptoCallbacks;
     local:
         *;
 };

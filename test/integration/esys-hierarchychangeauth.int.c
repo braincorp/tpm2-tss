@@ -5,17 +5,18 @@
  *******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include <stdlib.h>
+#include <stdbool.h> // for bool, false, true
+#include <stdlib.h>  // for NULL, EXIT_FAILURE, EXIT_SUCCESS
 
-#include "tss2_esys.h"
+#include "tss2_common.h"     // for TSS2_RC_SUCCESS, TSS2_RC
+#include "tss2_esys.h"       // for Esys_Free, ESYS_TR_NONE, Esys_FlushContext
+#include "tss2_tpm2_types.h" // for TPM2B_AUTH, TPM2B_PUBLIC, TPM2B_CREATIO...
 
-#include "esys_iutil.h"
 #define LOGMODULE test
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for goto_if_error, LOG_ERROR, LOG_INFO
 
 /** This test is intended to test the change of an authorization value of
  *  a hierarchy.
@@ -25,7 +26,7 @@
  * Also second primary is created after a call of Esys_TR_SetAuth with
  * the new auth value.
  *
- * Tested ESAPI commands:
+ * Tested ESYS commands:
  *  - Esys_CreatePrimary() (M)
  *  - Esys_FlushContext() (M)
  *  - Esys_HierarchyChangeAuth() (M)
@@ -36,28 +37,23 @@
  */
 
 int
-test_esys_hierarchychangeauth(ESYS_CONTEXT * esys_context)
-{
+test_esys_hierarchychangeauth(ESYS_CONTEXT *esys_context) {
     TSS2_RC r;
     ESYS_TR primaryHandle = ESYS_TR_NONE;
-    bool auth_changed = false;
+    bool    auth_changed = false;
     ESYS_TR authHandle_handle = ESYS_TR_RH_OWNER;
-    TPM2B_AUTH newAuth = {
-        .size = 5,
-        .buffer = {1, 2, 3, 4, 5}
-    };
 
-    TPM2B_AUTH emptyAuth = {
-        .size = 0,
-        .buffer = {}
-    };
+    TPM2B_PUBLIC        *outPublic = NULL;
+    TPM2B_CREATION_DATA *creationData = NULL;
+    TPM2B_DIGEST        *creationHash = NULL;
+    TPMT_TK_CREATION    *creationTicket = NULL;
 
-    r = Esys_HierarchyChangeAuth(esys_context,
-                                 authHandle_handle,
-                                 ESYS_TR_PASSWORD,
-                                 ESYS_TR_NONE,
-                                 ESYS_TR_NONE,
-                                 &newAuth);
+    TPM2B_AUTH newAuth = { .size = 5, .buffer = { 1, 2, 3, 4, 5 } };
+
+    TPM2B_AUTH emptyAuth = { .size = 0, .buffer = {} };
+
+    r = Esys_HierarchyChangeAuth(esys_context, authHandle_handle, ESYS_TR_PASSWORD, ESYS_TR_NONE,
+                                 ESYS_TR_NONE, &newAuth);
     goto_if_error(r, "Error: HierarchyChangeAuth", error);
 
     auth_changed = true;
@@ -76,7 +72,7 @@ test_esys_hierarchychangeauth(ESYS_CONTEXT * esys_context)
         },
     };
 
-      TPM2B_PUBLIC inPublic = {
+    TPM2B_PUBLIC inPublic = {
         .size = 0,
         .publicArea = {
             .type = TPM2_ALG_RSA,
@@ -120,15 +116,9 @@ test_esys_hierarchychangeauth(ESYS_CONTEXT * esys_context)
 
     goto_if_error(r, "Error: TR_SetAuth", error);
 
-    TPM2B_PUBLIC *outPublic;
-    TPM2B_CREATION_DATA *creationData;
-    TPM2B_DIGEST *creationHash;
-    TPMT_TK_CREATION *creationTicket;
-
-    r = Esys_CreatePrimary(esys_context, ESYS_TR_RH_OWNER, ESYS_TR_PASSWORD,
-                           ESYS_TR_NONE, ESYS_TR_NONE, &inSensitivePrimary, &inPublic,
-                           &outsideInfo, &creationPCR, &primaryHandle,
-                           &outPublic, &creationData, &creationHash,
+    r = Esys_CreatePrimary(esys_context, ESYS_TR_RH_OWNER, ESYS_TR_PASSWORD, ESYS_TR_NONE,
+                           ESYS_TR_NONE, &inSensitivePrimary, &inPublic, &outsideInfo, &creationPCR,
+                           &primaryHandle, &outPublic, &creationData, &creationHash,
                            &creationTicket);
     goto_if_error(r, "Error esys create primary", error);
 
@@ -140,26 +130,30 @@ test_esys_hierarchychangeauth(ESYS_CONTEXT * esys_context)
     r = Esys_TR_SetAuth(esys_context, ESYS_TR_RH_OWNER, &newAuth);
     goto_if_error(r, "Error SetAuth", error);
 
+    Esys_Free(outPublic);
+    Esys_Free(creationData);
+    Esys_Free(creationHash);
+    Esys_Free(creationTicket);
+
     /* Check whether HierarchyChangeAuth with auth equal NULL works */
 
-    r = Esys_CreatePrimary(esys_context, ESYS_TR_RH_OWNER, ESYS_TR_PASSWORD,
-                           ESYS_TR_NONE, ESYS_TR_NONE, &inSensitivePrimary, &inPublic,
-                           &outsideInfo, &creationPCR, &primaryHandle,
-                           &outPublic, &creationData, &creationHash,
+    r = Esys_CreatePrimary(esys_context, ESYS_TR_RH_OWNER, ESYS_TR_PASSWORD, ESYS_TR_NONE,
+                           ESYS_TR_NONE, &inSensitivePrimary, &inPublic, &outsideInfo, &creationPCR,
+                           &primaryHandle, &outPublic, &creationData, &creationHash,
                            &creationTicket);
     goto_if_error(r, "Error esys create primary", error);
 
     r = Esys_FlushContext(esys_context, primaryHandle);
     goto_if_error(r, "Flushing context", error);
 
-    r = Esys_HierarchyChangeAuth(esys_context,
-                                 authHandle_handle,
-                                 ESYS_TR_PASSWORD,
-                                 ESYS_TR_NONE,
-                                 ESYS_TR_NONE,
-                                 NULL);
+    r = Esys_HierarchyChangeAuth(esys_context, authHandle_handle, ESYS_TR_PASSWORD, ESYS_TR_NONE,
+                                 ESYS_TR_NONE, NULL);
     goto_if_error(r, "Error: HierarchyChangeAuth", error);
 
+    Esys_Free(outPublic);
+    Esys_Free(creationData);
+    Esys_Free(creationHash);
+    Esys_Free(creationTicket);
     return EXIT_SUCCESS;
 
 error:
@@ -174,20 +168,21 @@ error:
         if (Esys_TR_SetAuth(esys_context, ESYS_TR_RH_OWNER, &newAuth) != TSS2_RC_SUCCESS) {
             LOG_ERROR("Error SetAuth");
         }
-        if (Esys_HierarchyChangeAuth(esys_context,
-                                     authHandle_handle,
-                                     ESYS_TR_PASSWORD,
-                                     ESYS_TR_NONE,
-                                     ESYS_TR_NONE,
-                                     &emptyAuth) != TSS2_RC_SUCCESS) {
+        if (Esys_HierarchyChangeAuth(esys_context, authHandle_handle, ESYS_TR_PASSWORD,
+                                     ESYS_TR_NONE, ESYS_TR_NONE, &emptyAuth)
+            != TSS2_RC_SUCCESS) {
             LOG_ERROR("Error: HierarchyChangeAuth");
         }
     }
 
+    Esys_Free(outPublic);
+    Esys_Free(creationData);
+    Esys_Free(creationHash);
+    Esys_Free(creationTicket);
     return EXIT_FAILURE;
 }
 
 int
-test_invoke_esapi(ESYS_CONTEXT * esys_context) {
+test_invoke_esys(ESYS_CONTEXT *esys_context) {
     return test_esys_hierarchychangeauth(esys_context);
 }

@@ -8,22 +8,27 @@
 #include <inttypes.h>
 #include <stdlib.h>
 
-#include "tss2_tpm2_types.h"
 #include "tss2_tcti.h"
+#include "tss2_tpm2_types.h"
 
-void
-Tss2_TctiLdr_Finalize (TSS2_TCTI_CONTEXT **context);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void Tss2_TctiLdr_Finalize(TSS2_TCTI_CONTEXT **context);
 TSS2_RC
-Tss2_TctiLdr_Initialize_Ex (const char *name,
-                            const char *conf,
-                            TSS2_TCTI_CONTEXT **context);
+Tss2_TctiLdr_Initialize_Ex(const char *name, const char *conf, TSS2_TCTI_CONTEXT **context);
 TSS2_RC
-Tss2_TctiLdr_Initialize (const char *nameConf,
-                         TSS2_TCTI_CONTEXT **context);
+Tss2_TctiLdr_Initialize(const char *nameConf, TSS2_TCTI_CONTEXT **context);
 TSS2_RC
-Tss2_TctiLdr_GetInfo (const char *name,
-                      TSS2_TCTI_INFO **info);
-void
-Tss2_TctiLdr_FreeInfo (TSS2_TCTI_INFO **info);
+Tss2_TctiLdr_GetInfo(const char *name, TSS2_TCTI_INFO **info);
+void Tss2_TctiLdr_FreeInfo(TSS2_TCTI_INFO **info);
+
+TSS2_RC
+Tss2_Tcti_TctiLdr_Init(TSS2_TCTI_CONTEXT *tctiContext, size_t *size, const char *nameConf);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TSS2_TCTILDR_H */

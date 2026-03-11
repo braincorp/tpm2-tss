@@ -5,18 +5,22 @@
  *******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
-#include <stdlib.h>
+#include <stdint.h> // for int32_t
+#include <stdlib.h> // for NULL, free, calloc, rand, size_t
 
-#include "tss2_esys.h"
-#include "tss2_tctildr.h"
+#include "esys_crypto.h"  // for iesys_initialize_crypto_backend
+#include "esys_int.h"     // for ESYS_CONTEXT, _ESYS_ASSERT_NON_NULL
+#include "esys_iutil.h"   // for iesys_DeleteAllResourceObjects, ESYS_TR_MI...
+#include "tss2_common.h"  // for TSS2_RC, TSS2_RC_SUCCESS, TSS2_ESYS_RC_BAD...
+#include "tss2_esys.h"    // for ESYS_CONTEXT, ESYS_CRYPTO_CALLBACKS, ESYS_TR
+#include "tss2_sys.h"     // for Tss2_Sys_GetTctiContext, Tss2_Sys_Finalize
+#include "tss2_tcti.h"    // for TSS2_TCTI_CONTEXT, TSS2_TCTI_POLL_HANDLE
+#include "tss2_tctildr.h" // for Tss2_TctiLdr_Finalize, Tss2_TctiLdr_Initia...
 
-#include "esys_iutil.h"
-#include "tss2-tcti/tctildr-interface.h"
 #define LOGMODULE esys
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for LOG_ERROR, goto_if_error, return_if_error
 
 /** Initialize an ESYS_CONTEXT for further use.
  *
@@ -27,6 +31,7 @@
  *       Library libtss2-tcti-tabrmd.so (tabrmd)
  *       Device /dev/tpmrm0 (kernel resident resource manager)
  *       Device /dev/tpm0 (hardware TPM)
+ *       Device /dev/tcm0 (hardware TCM)
  *       TCP socket localhost:2321 (TPM simulator)
  * @param esys_context [out] The ESYS_CONTEXT.
  * @param tcti [in] The TCTI context used to connect to the TPM (may be NULL).
@@ -40,13 +45,13 @@
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_Initialize(ESYS_CONTEXT ** esys_context, TSS2_TCTI_CONTEXT * tcti,
-                TSS2_ABI_VERSION * abiVersion)
-{
+Esys_Initialize(ESYS_CONTEXT     **esys_context,
+                TSS2_TCTI_CONTEXT *tcti,
+                TSS2_ABI_VERSION  *abiVersion) {
     TSS2_RC r;
-    size_t syssize;
+    size_t  syssize;
 
-    _ESYS_ASSERT_NON_NULL(esys_context);
+    ESYS_ASSERT_NON_NULL(esys_context);
     *esys_context = NULL;
 
     /* Allocate memory for the ESYS context
@@ -54,18 +59,18 @@ Esys_Initialize(ESYS_CONTEXT ** esys_context, TSS2_TCTI_CONTEXT * tcti,
     *esys_context = calloc(1, sizeof(ESYS_CONTEXT));
     return_if_null(*esys_context, "Out of memory.", TSS2_ESYS_RC_MEMORY);
 
-    /* Allocate memory for the SYS context */
-    syssize = Tss2_Sys_GetContextSize(0);
-    (*esys_context)->sys = calloc(1, syssize);
-    goto_if_null((*esys_context)->sys, "Error: During malloc.",
-                 TSS2_ESYS_RC_MEMORY, cleanup_return);
-
     /* Store the application provided tcti to be return on Esys_GetTcti(). */
     (*esys_context)->tcti_app_param = tcti;
 
+    /* Allocate memory for the SYS context */
+    syssize = Tss2_Sys_GetContextSize(0);
+    (*esys_context)->sys = calloc(1, syssize);
+    goto_if_null((*esys_context)->sys, "Error: During malloc.", TSS2_ESYS_RC_MEMORY,
+                 cleanup_return);
+
     /* If no tcti was provided, initialize the default one. */
     if (tcti == NULL) {
-        r = Tss2_TctiLdr_Initialize (NULL, &tcti);
+        r = Tss2_TctiLdr_Initialize(NULL, &tcti);
         goto_if_error(r, "Initialize default tcti.", cleanup_return);
     }
 
@@ -77,8 +82,11 @@ Esys_Initialize(ESYS_CONTEXT ** esys_context, TSS2_TCTI_CONTEXT * tcti,
        namespace for handles */
     (*esys_context)->esys_handle_cnt = ESYS_TR_MIN_OBJECT + (rand() % 6000000);
 
-    /* Initialize crypto backend. */
-    r = iesys_initialize_crypto();
+    /*
+     * setup crypto backend and initialize. Note: their is no userdata or callbacks
+     * here, so NULL NULL
+     */
+    r = iesys_initialize_crypto_backend(&(*esys_context)->crypto_backend, NULL);
     goto_if_error(r, "Initialize crypto backend.", cleanup_return);
 
     return TSS2_RC_SUCCESS;
@@ -105,13 +113,12 @@ cleanup_return:
  * @param esys_context [in,out] The ESYS_CONTEXT. (will be freed and set to NULL)
  */
 void
-Esys_Finalize(ESYS_CONTEXT ** esys_context)
-{
-    TSS2_RC r;
+Esys_Finalize(ESYS_CONTEXT **esys_context) {
+    TSS2_RC            r;
     TSS2_TCTI_CONTEXT *tctcontext = NULL;
 
     if (esys_context == NULL || *esys_context == NULL) {
-        LOG_WARNING("Finalizing NULL context.");
+        LOG_DEBUG("Finalizing NULL context.");
         return;
     }
 
@@ -156,10 +163,9 @@ Esys_Finalize(ESYS_CONTEXT ** esys_context)
  * @retval TSS2_ESYS_RC_BAD_REFERENCE if esysContext or tcti is NULL.
  */
 TSS2_RC
-Esys_GetTcti(ESYS_CONTEXT * esys_context, TSS2_TCTI_CONTEXT ** tcti)
-{
-    _ESYS_ASSERT_NON_NULL(esys_context);
-    _ESYS_ASSERT_NON_NULL(tcti);
+Esys_GetTcti(ESYS_CONTEXT *esys_context, TSS2_TCTI_CONTEXT **tcti) {
+    ESYS_ASSERT_NON_NULL(esys_context);
+    ESYS_ASSERT_NON_NULL(tcti);
     *tcti = esys_context->tcti_app_param;
     return TSS2_RC_SUCCESS;
 }
@@ -177,15 +183,13 @@ Esys_GetTcti(ESYS_CONTEXT * esys_context, TSS2_TCTI_CONTEXT ** tcti)
  * @retval TSS2_RCs produced by lower layers of the software stack.
  */
 TSS2_RC
-Esys_GetPollHandles(ESYS_CONTEXT * esys_context,
-                    TSS2_TCTI_POLL_HANDLE ** handles, size_t * count)
-{
-    TSS2_RC r;
+Esys_GetPollHandles(ESYS_CONTEXT *esys_context, TSS2_TCTI_POLL_HANDLE **handles, size_t *count) {
+    TSS2_RC            r;
     TSS2_TCTI_CONTEXT *tcti_context;
 
-    _ESYS_ASSERT_NON_NULL(esys_context);
-    _ESYS_ASSERT_NON_NULL(handles);
-    _ESYS_ASSERT_NON_NULL(count);
+    ESYS_ASSERT_NON_NULL(esys_context);
+    ESYS_ASSERT_NON_NULL(handles);
+    ESYS_ASSERT_NON_NULL(count);
 
     /* Get the tcti-context to use */
     r = Tss2_Sys_GetTctiContext(esys_context->sys, &tcti_context);
@@ -213,9 +217,73 @@ Esys_GetPollHandles(ESYS_CONTEXT * esys_context,
  * @retval TSS2_ESYS_RC_BAD_REFERENCE if esysContext is NULL.
  */
 TSS2_RC
-Esys_SetTimeout(ESYS_CONTEXT * esys_context, int32_t timeout)
-{
-    _ESYS_ASSERT_NON_NULL(esys_context);
+Esys_SetTimeout(ESYS_CONTEXT *esys_context, int32_t timeout) {
+    ESYS_ASSERT_NON_NULL(esys_context);
     esys_context->timeout = timeout;
+    return TSS2_RC_SUCCESS;
+}
+
+/** Helper function that returns sys contest from the give esys context.
+ *
+ * Function returns sys contest from the give esys context.
+ * @param esys_context [in] ESYS context.
+ * @param sys_context [out] SYS context.
+ * @retval TSS2_RC_SUCCESS on Success.
+ * @retval TSS2_ESYS_RC_BAD_REFERENCE if esys_context of sys_context are NULL.
+ */
+TSS2_RC
+Esys_GetSysContext(ESYS_CONTEXT *esys_context, TSS2_SYS_CONTEXT **sys_context) {
+    if (esys_context == NULL || sys_context == NULL)
+        return TSS2_ESYS_RC_BAD_REFERENCE;
+
+    *sys_context = esys_context->sys;
+
+    return TSS2_RC_SUCCESS;
+}
+
+/** Set Crypto Callbacks
+ *
+ * This is an advanced functionality that should be used with caution and by those
+ * who know exactly what they are doing. This function provides the ability to set
+ * and restore to the original state, the cryptographic callbacks that ESAPI
+ * uses internally. This is useful for custom builds where runtime configurable
+ * cryptography is beneficial over a configure time, --with-crypto=<ossl|mbed>
+ * backend.
+ *
+ * @param[in] esysContext The ESYS_CONTEXT.
+ * @param[in] callbacks The user define crypto callbacks or NULL for a reset to the
+ *   ./configure time state.
+ * @retval TSS2_ESYS_RC_BAD_REFERENCE is esysContext is NULL.
+ * @retval TSS2_TSS2_ESYS_RC_CALLBACK_NULL if a required callback pointer is NULL.
+ * @retval USER_DEFINED user defined errors if the user callback fails.
+ * @note If ./configure --with-crypto=none, ESAPI functions that need crypto will
+ * fail with TSS2_TSS2_ESYS_RC_CALLBACK_NULL until the application registers
+ * callbacks. Under the same scenario, It will also fail if the application resets
+ * the state back to the original state.
+ */
+TSS2_RC
+Esys_SetCryptoCallbacks(ESYS_CONTEXT *esysContext, ESYS_CRYPTO_CALLBACKS *callbacks) {
+    LOG_TRACE("context=%p, callbacks=%p", esysContext, callbacks);
+
+    /* Check context, sequence correctness and set state to error for now */
+    if (esysContext == NULL) {
+        LOG_ERROR("esyscontext is NULL.");
+        return TSS2_ESYS_RC_BAD_REFERENCE;
+    }
+
+    return iesys_initialize_crypto_backend(&esysContext->crypto_backend, callbacks);
+}
+
+ESYS_TR
+Esys_GetCryptoCallbacks(ESYS_CONTEXT *esysContext, ESYS_CRYPTO_CALLBACKS *callbacks) {
+    LOG_TRACE("context=%p, callbacks=%p", esysContext, callbacks);
+
+    if (esysContext == NULL || callbacks == NULL) {
+        LOG_ERROR("esyscontext or callbacks is NULL.");
+        return TSS2_ESYS_RC_BAD_REFERENCE;
+    }
+
+    *callbacks = esysContext->crypto_backend;
+
     return TSS2_RC_SUCCESS;
 }

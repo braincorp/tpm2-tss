@@ -5,25 +5,26 @@
  ******************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include "tss2_mu.h"
-#include "tss2_sys.h"
-#include "tss2_esys.h"
+#include <inttypes.h> // for PRIx32, int32_t
+#include <stddef.h>   // for NULL
 
-#include "esys_types.h"
-#include "esys_iutil.h"
-#include "esys_mu.h"
+#include "esys_int.h"        // for ESYS_CONTEXT, _ESYS_STATE_INIT, _ESYS_S...
+#include "esys_iutil.h"      // for esys_GetResourceObject, iesys_check_seq...
+#include "esys_types.h"      // for IESYS_RESOURCE
+#include "tss2_common.h"     // for TSS2_RC, TSS2_RC_SUCCESS, TSS2_BASE_RC_...
+#include "tss2_esys.h"       // for ESYS_CONTEXT, ESYS_TR, Esys_TR_Close
+#include "tss2_sys.h"        // for Tss2_Sys_ExecuteAsync, Tss2_Sys_Execute...
+#include "tss2_tpm2_types.h" // for TPM2_RC_RETRY, TPM2_RC_TESTING, TPM2_RC...
+
 #define LOGMODULE esys
-#include "util/log.h"
-#include "util/aux_util.h"
+#include "util/log.h" // for return_state_if_error, LOG_DEBUG, LOG_E...
 
 /** Store command parameters inside the ESYS_CONTEXT for use during _Finish */
-static void store_input_parameters (
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR flushHandle)
-{
+static void
+store_input_parameters(ESYS_CONTEXT *esysContext, ESYS_TR flushHandle) {
     esysContext->in.FlushContext.flushHandle = flushHandle;
 }
 
@@ -56,10 +57,7 @@ static void store_input_parameters (
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_FlushContext(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR flushHandle)
-{
+Esys_FlushContext(ESYS_CONTEXT *esysContext, ESYS_TR flushHandle) {
     TSS2_RC r;
 
     r = Esys_FlushContext_Async(esysContext, flushHandle);
@@ -79,10 +77,9 @@ Esys_FlushContext(
         r = Esys_FlushContext_Finish(esysContext);
         /* This is just debug information about the reattempt to finish the
            command */
-        if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN)
-            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32
-                      " => resubmitting command", r);
-    } while ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN);
+        if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN)
+            LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32 " => resubmitting command", r);
+    } while (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN);
 
     /* Restore the timeout value to the original value */
     esysContext->timeout = timeouttmp;
@@ -113,13 +110,9 @@ Esys_FlushContext(
  *         ESYS_TR objects are ESYS_TR_NONE.
  */
 TSS2_RC
-Esys_FlushContext_Async(
-    ESYS_CONTEXT *esysContext,
-    ESYS_TR flushHandle)
-{
+Esys_FlushContext_Async(ESYS_CONTEXT *esysContext, ESYS_TR flushHandle) {
     TSS2_RC r;
-    LOG_TRACE("context=%p, flushHandle=%"PRIx32 "",
-              esysContext, flushHandle);
+    LOG_TRACE("context=%p, flushHandle=%" PRIx32 "", esysContext, flushHandle);
     RSRC_NODE_T *flushHandleNode;
 
     /* Check context, sequence correctness and set state to error for now */
@@ -130,24 +123,22 @@ Esys_FlushContext_Async(
     r = iesys_check_sequence_async(esysContext);
     if (r != TSS2_RC_SUCCESS)
         return r;
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
     store_input_parameters(esysContext, flushHandle);
 
     /* Retrieve the metadata objects for provided handles */
     r = esys_GetResourceObject(esysContext, flushHandle, &flushHandleNode);
-    return_state_if_error(r, _ESYS_STATE_INIT, "flushHandle unknown.");
+    return_state_if_error(r, ESYS_STATE_INIT, "flushHandle unknown.");
 
     /* Initial invocation of SAPI to prepare the command buffer with parameters */
-    r = Tss2_Sys_FlushContext_Prepare(esysContext->sys,
-                                      (flushHandleNode == NULL) ? TPM2_RH_NULL
-                                       : flushHandleNode->rsrc.handle);
-    return_state_if_error(r, _ESYS_STATE_INIT, "SAPI Prepare returned error.");
+    r = Tss2_Sys_FlushContext_Prepare(
+        esysContext->sys, (flushHandleNode == NULL) ? TPM2_RH_NULL : flushHandleNode->rsrc.handle);
+    return_state_if_error(r, ESYS_STATE_INIT, "SAPI Prepare returned error.");
     /* Trigger execution and finish the async invocation */
     r = Tss2_Sys_ExecuteAsync(esysContext->sys);
-    return_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                          "Finish (Execute Async)");
+    return_state_if_error(r, ESYS_STATE_INTERNALERROR, "Finish (Execute Async)");
 
-    esysContext->state = _ESYS_STATE_SENT;
+    esysContext->state = ESYS_STATE_SENT;
 
     return r;
 }
@@ -180,12 +171,10 @@ Esys_FlushContext_Async(
  *         returned to the caller unaltered unless handled internally.
  */
 TSS2_RC
-Esys_FlushContext_Finish(
-    ESYS_CONTEXT *esysContext)
-{
-    TSS2_RC r;
-    LOG_TRACE("context=%p",
-              esysContext);
+Esys_FlushContext_Finish(ESYS_CONTEXT *esysContext) {
+    TSS2_RC      r;
+    RSRC_NODE_T *flushHandleNode;
+    LOG_TRACE("context=%p", esysContext);
 
     if (esysContext == NULL) {
         LOG_ERROR("esyscontext is NULL.");
@@ -193,31 +182,31 @@ Esys_FlushContext_Finish(
     }
 
     /* Check for correct sequence and set sequence to irregular for now */
-    if (esysContext->state != _ESYS_STATE_SENT &&
-        esysContext->state != _ESYS_STATE_RESUBMISSION) {
+    if (esysContext->state != ESYS_STATE_SENT && esysContext->state != ESYS_STATE_RESUBMISSION) {
         LOG_ERROR("Esys called in bad sequence.");
         return TSS2_ESYS_RC_BAD_SEQUENCE;
     }
-    esysContext->state = _ESYS_STATE_INTERNALERROR;
+    esysContext->state = ESYS_STATE_INTERNALERROR;
 
     /*Receive the TPM response and handle resubmissions if necessary. */
     r = Tss2_Sys_ExecuteFinish(esysContext->sys, esysContext->timeout);
-    if ((r & ~TSS2_RC_LAYER_MASK) == TSS2_BASE_RC_TRY_AGAIN) {
+    if (base_rc(r) == TSS2_BASE_RC_TRY_AGAIN) {
         LOG_DEBUG("A layer below returned TRY_AGAIN: %" PRIx32, r);
-        esysContext->state = _ESYS_STATE_SENT;
+        esysContext->state = ESYS_STATE_SENT;
         return r;
     }
     /* This block handle the resubmission of TPM commands given a certain set of
      * TPM response codes. */
     if (r == TPM2_RC_RETRY || r == TPM2_RC_TESTING || r == TPM2_RC_YIELDED) {
         LOG_DEBUG("TPM returned RETRY, TESTING or YIELDED, which triggers a "
-            "resubmission: %" PRIx32, r);
-        if (esysContext->submissionCount++ >= _ESYS_MAX_SUBMISSIONS) {
+                  "resubmission: %" PRIx32,
+                  r);
+        if (esysContext->submissionCount++ >= ESYS_MAX_SUBMISSIONS) {
             LOG_WARNING("Maximum number of (re)submissions has been reached.");
-            esysContext->state = _ESYS_STATE_INIT;
+            esysContext->state = ESYS_STATE_INIT;
             return r;
         }
-        esysContext->state = _ESYS_STATE_RESUBMISSION;
+        esysContext->state = ESYS_STATE_RESUBMISSION;
         r = Tss2_Sys_ExecuteAsync(esysContext->sys);
         if (r != TSS2_RC_SUCCESS) {
             LOG_WARNING("Error attempting to resubmit");
@@ -232,22 +221,27 @@ Esys_FlushContext_Finish(
     /* The following is the "regular error" handling. */
     if (iesys_tpm_error(r)) {
         LOG_WARNING("Received TPM Error");
-        esysContext->state = _ESYS_STATE_INIT;
+        esysContext->state = ESYS_STATE_INIT;
         return r;
     } else if (r != TSS2_RC_SUCCESS) {
         LOG_ERROR("Received a non-TPM Error");
-        esysContext->state = _ESYS_STATE_INTERNALERROR;
+        esysContext->state = ESYS_STATE_INTERNALERROR;
         return r;
     }
     r = Tss2_Sys_FlushContext_Complete(esysContext->sys);
-    return_state_if_error(r, _ESYS_STATE_INTERNALERROR,
-                          "Received error from SAPI unmarshaling" );
+    return_state_if_error(r, ESYS_STATE_INTERNALERROR, "Received error from SAPI unmarshaling");
 
     /* The ESYS_TR object has to be invalidated */
+
+    r = esys_GetResourceObject(esysContext, esysContext->in.FlushContext.flushHandle,
+                               &flushHandleNode);
+    return_state_if_error(r, ESYS_STATE_INIT, "flushHandle unknown.");
+
+    flushHandleNode->reference_count = 0;
     r = Esys_TR_Close(esysContext, &esysContext->in.FlushContext.flushHandle);
     return_if_error(r, "invalidate object");
 
-    esysContext->state = _ESYS_STATE_INIT;
+    esysContext->state = ESYS_STATE_INIT;
 
     return TSS2_RC_SUCCESS;
 }

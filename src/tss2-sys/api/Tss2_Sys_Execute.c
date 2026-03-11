@@ -5,23 +5,27 @@
  ***********************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h" // IWYU pragma: keep
 #endif
 
-#include <inttypes.h>
-#include <string.h>
+#include <inttypes.h> // for PRIu32, PRIx16, PRIx32, int32_t
+#include <string.h>   // for memcpy, NULL, size_t
 
-#include "tss2_tpm2_types.h"
-#include "tss2_mu.h"
-#include "sysapi_util.h"
-#include "util/tss2_endian.h"
+#include "sysapi_util.h"      // for _TSS2_SYS_CONTEXT_BLOB, TPM20_Header_Out
+#include "tss2_common.h"      // for TSS2_RC, TSS2_SYS_RC_BAD_REFERENCE
+#include "tss2_mu.h"          // for Tss2_MU_UINT32_Unmarshal, Tss2_MU_TPM2...
+#include "tss2_sys.h"         // for TSS2_SYS_CONTEXT, Tss2_Sys_Execute
+#include "tss2_tcti.h"        // for Tss2_Tcti_Receive, TSS2_TCTI_TIMEOUT_B...
+#include "tss2_tpm2_types.h"  // for TPM2_RC_INITIALIZE, TPM2_ST_NO_SESSIONS
+#include "util/tss2_endian.h" // for HOST_TO_BE_32
+
 #define LOGMODULE sys
-#include "util/log.h"
+#include "util/log.h" // for LOG_ERROR
 
-TSS2_RC Tss2_Sys_ExecuteAsync(TSS2_SYS_CONTEXT *sysContext)
-{
-    _TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
-    TSS2_RC rval;
+TSS2_RC
+Tss2_Sys_ExecuteAsync(TSS2_SYS_CONTEXT *sysContext) {
+    TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
+    TSS2_RC                rval;
 
     if (!ctx)
         return TSS2_SYS_RC_BAD_REFERENCE;
@@ -30,8 +34,7 @@ TSS2_RC Tss2_Sys_ExecuteAsync(TSS2_SYS_CONTEXT *sysContext)
         return TSS2_SYS_RC_BAD_SEQUENCE;
 
     rval = Tss2_Tcti_Transmit(ctx->tctiContext,
-                              HOST_TO_BE_32(req_header_from_cxt(ctx)->commandSize),
-                              ctx->cmdBuffer);
+                              HOST_TO_BE_32(req_header_from_cxt(ctx)->commandSize), ctx->cmdBuffer);
     if (rval)
         return rval;
 
@@ -45,11 +48,11 @@ TSS2_RC Tss2_Sys_ExecuteAsync(TSS2_SYS_CONTEXT *sysContext)
     return rval;
 }
 
-TSS2_RC Tss2_Sys_ExecuteFinish(TSS2_SYS_CONTEXT *sysContext, int32_t timeout)
-{
-    _TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
-    TSS2_RC rval;
-    size_t responseSize = 0;
+TSS2_RC
+Tss2_Sys_ExecuteFinish(TSS2_SYS_CONTEXT *sysContext, int32_t timeout) {
+    TSS2_SYS_CONTEXT_BLOB *ctx = syscontext_cast(sysContext);
+    TSS2_RC                rval;
+    size_t                 response_size = 0;
 
     if (!ctx)
         return TSS2_SYS_RC_BAD_REFERENCE;
@@ -57,36 +60,33 @@ TSS2_RC Tss2_Sys_ExecuteFinish(TSS2_SYS_CONTEXT *sysContext, int32_t timeout)
     if (ctx->previousStage != CMD_STAGE_SEND_COMMAND)
         return TSS2_SYS_RC_BAD_SEQUENCE;
 
-#ifdef TCTI_PARTIAL_READ
     /*
-     * First call receive with NULL as the response buffer to
-     * get the size of the response
+     * Call tcti_receive with NULL response buffer to get the actual size
+     * of the response. If we can read the response in multiple chunks
+     * then the tcti should read the response header first and give us
+     * the acctual size. If not it should set the response size to the
+     * maximum possible size.
      */
-    rval = Tss2_Tcti_Receive(ctx->tctiContext, &responseSize,
-                             NULL, timeout);
+    rval = Tss2_Tcti_Receive(ctx->tctiContext, &response_size, NULL, timeout);
     if (rval)
         return rval;
 
-    if (responseSize < sizeof(TPM20_Header_Out)) {
+    if (response_size < sizeof(TPM20_Header_Out)) {
         ctx->previousStage = CMD_STAGE_PREPARE;
         return TSS2_SYS_RC_INSUFFICIENT_RESPONSE;
     }
-    if (responseSize > ctx->maxCmdSize) {
+    if (response_size > ctx->maxCmdSize) {
         ctx->previousStage = CMD_STAGE_PREPARE;
+        LOG_ERROR("Response size to big: %zu > %" PRIu32, response_size, ctx->maxCmdSize);
         return TSS2_SYS_RC_INSUFFICIENT_CONTEXT;
     }
-#else
-    /* For none partial reads set the size to maxCmdSize */
-    responseSize = ctx->maxCmdSize;
-#endif
 
-    /*
-     * Then call receive again with the response buffer to read the response
-     */
-    rval = Tss2_Tcti_Receive(ctx->tctiContext, &responseSize,
-                             ctx->cmdBuffer, timeout);
-    if (rval == TSS2_TCTI_RC_INSUFFICIENT_BUFFER)
+    /* Then call receive again with the response buffer to read the response */
+    rval = Tss2_Tcti_Receive(ctx->tctiContext, &response_size, ctx->cmdBuffer, timeout);
+    if (rval == TSS2_TCTI_RC_INSUFFICIENT_BUFFER) {
+        LOG_ERROR("TCTI: Insufficient Buffer.");
         return TSS2_SYS_RC_INSUFFICIENT_CONTEXT;
+    }
 
     if (rval)
         return rval;
@@ -99,17 +99,14 @@ TSS2_RC Tss2_Sys_ExecuteFinish(TSS2_SYS_CONTEXT *sysContext, int32_t timeout)
      */
     ctx->nextData = 0;
 
-    rval = Tss2_MU_TPM2_ST_Unmarshal(ctx->cmdBuffer,
-                                     ctx->maxCmdSize,
-                                     &ctx->nextData,
+    rval = Tss2_MU_TPM2_ST_Unmarshal(ctx->cmdBuffer, ctx->maxCmdSize, &ctx->nextData,
                                      &ctx->rsp_header.tag);
     if (rval) {
         LOG_ERROR("Unmarshaling response tag. RC=%" PRIx32, rval);
         return rval;
     }
 
-    if (ctx->rsp_header.tag != TPM2_ST_SESSIONS &&
-        ctx->rsp_header.tag != TPM2_ST_NO_SESSIONS) {
+    if (ctx->rsp_header.tag != TPM2_ST_SESSIONS && ctx->rsp_header.tag != TPM2_ST_NO_SESSIONS) {
         if (ctx->rsp_header.tag == TPM2_ST_RSP_COMMAND) {
             LOG_ERROR("Unsupported device. The device is a TPM 1.2");
             return TSS2_SYS_RC_GENERAL_FAILURE;
@@ -120,10 +117,8 @@ TSS2_RC Tss2_Sys_ExecuteFinish(TSS2_SYS_CONTEXT *sysContext, int32_t timeout)
         }
     }
 
-    rval = Tss2_MU_UINT32_Unmarshal(ctx->cmdBuffer,
-                                     ctx->maxCmdSize,
-                                     &ctx->nextData,
-                                     &ctx->rsp_header.responseSize);
+    rval = Tss2_MU_UINT32_Unmarshal(ctx->cmdBuffer, ctx->maxCmdSize, &ctx->nextData,
+                                    &ctx->rsp_header.responseSize);
     if (rval)
         return rval;
 
@@ -131,9 +126,7 @@ TSS2_RC Tss2_Sys_ExecuteFinish(TSS2_SYS_CONTEXT *sysContext, int32_t timeout)
         return TSS2_SYS_RC_MALFORMED_RESPONSE;
     }
 
-    rval = Tss2_MU_UINT32_Unmarshal(ctx->cmdBuffer,
-                                    ctx->maxCmdSize,
-                                    &ctx->nextData,
+    rval = Tss2_MU_UINT32_Unmarshal(ctx->cmdBuffer, ctx->maxCmdSize, &ctx->nextData,
                                     &ctx->rsp_header.responseCode);
     if (rval)
         return rval;
@@ -162,8 +155,8 @@ TSS2_RC Tss2_Sys_ExecuteFinish(TSS2_SYS_CONTEXT *sysContext, int32_t timeout)
     return rval;
 }
 
-TSS2_RC Tss2_Sys_Execute(TSS2_SYS_CONTEXT *sysContext)
-{
+TSS2_RC
+Tss2_Sys_Execute(TSS2_SYS_CONTEXT *sysContext) {
     TSS2_RC rval;
 
     if (!sysContext)
